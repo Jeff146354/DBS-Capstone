@@ -1,0 +1,59 @@
+@import "tailwindcss";
+
+@theme {
+  --color-background: #0d1f2d;
+  --color-bg-secondary: #152a3a;
+  --color-bg-tertiary: #1a3a4d;
+  --color-accent: #06cff5;
+  --color-accent-dark: #0099aa;
+  --color-warning: #ffb800;
+  --color-success: #00d084;
+  --color-danger: #ff6b6b;
+  --color-text-primary: #ffffff;
+  --color-text-secondary: #a8b8c8;
+  --color-card-bg: #1a3f52;
+}
+
+@layer base {
+  :root {
+    color-scheme: dark;
+  }
+  
+  * {
+    @apply border-transparent;
+  }
+  
+  html {
+    scroll-behavior: smooth;
+  }
+  
+  body {
+    @apply bg-background text-text-primary;
+  }
+}
+
+@layer components {
+  .card-glass {
+    @apply bg-card-bg/50 backdrop-blur-md border border-accent/10 rounded-xl;
+  }
+  
+  .card-solid {
+    @apply bg-bg-secondary rounded-xl border border-bg-tertiary;
+  }
+  
+  .gradient-text {
+    @apply bg-gradient-to-r from-accent to-accent-dark bg-clip-text text-transparent;
+  }
+  
+  .status-aman {
+    @apply bg-success/10 text-success;
+  }
+  
+  .status-hati-hati {
+    @apply bg-warning/10 text-warning;
+  }
+  
+  .status-boros {
+    @apply bg-danger/10 text-danger;
+  }
+}

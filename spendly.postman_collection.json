@@ -1,0 +1,434 @@
+{
+  "info": {
+    "_postman_id": "spendly-api-collection-v1",
+    "name": "Spendly API",
+    "description": "API collection for Spendly backend (Express :3001) and ML stub (FastAPI :8000).\n\nImport this file into Postman, then set up an environment with:\n- base_url = http://localhost:3001/api\n- ml_url = http://localhost:8000\n- demo_user_id = user-demo-001\n- transaction_id = (auto-populated by POST create request)",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "base_url", "value": "http://localhost:3001/api", "type": "string" },
+    { "key": "ml_url", "value": "http://localhost:8000", "type": "string" },
+    { "key": "demo_user_id", "value": "user-demo-001", "type": "string" },
+    { "key": "transaction_id", "value": "", "type": "string" }
+  ],
+  "item": [
+    {
+      "name": "Express API (localhost:3001)",
+      "item": [
+        {
+          "name": "Transactions",
+          "item": [
+            {
+              "name": "GET all transactions",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/transactions",
+                  "host": ["{{base_url}}"],
+                  "path": ["transactions"]
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "exec": [
+                      "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                      "pm.test('Response has success true', () => {",
+                      "  const json = pm.response.json();",
+                      "  pm.expect(json.success).to.be.true;",
+                      "  pm.expect(json.data).to.be.an('array');",
+                      "});"
+                    ],
+                    "type": "text/javascript"
+                  }
+                }
+              ]
+            },
+            {
+              "name": "GET transactions filtered by month",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/transactions?month=2025-07",
+                  "host": ["{{base_url}}"],
+                  "path": ["transactions"],
+                  "query": [{ "key": "month", "value": "2025-07" }]
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "exec": [
+                      "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                      "pm.test('All transactions are in July 2025', () => {",
+                      "  const json = pm.response.json();",
+                      "  pm.expect(json.success).to.be.true;",
+                      "  json.data.forEach(t => {",
+                      "    pm.expect(t.date).to.match(/^2025-07/);",
+                      "  });",
+                      "});"
+                    ],
+                    "type": "text/javascript"
+                  }
+                }
+              ]
+            },
+            {
+              "name": "GET single transaction",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/transactions/{{transaction_id}}",
+                  "host": ["{{base_url}}"],
+                  "path": ["transactions", "{{transaction_id}}"]
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "exec": [
+                      "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                      "pm.test('Transaction has required fields', () => {",
+                      "  const t = pm.response.json().data;",
+                      "  pm.expect(t).to.have.all.keys('id','user_id','type','amount','category','category_icon','account','payment_method','date','created_at');",
+                      "});"
+                    ],
+                    "type": "text/javascript"
+                  }
+                }
+              ]
+            },
+            {
+              "name": "POST create transaction (valid)",
+              "request": {
+                "method": "POST",
+                "header": [{ "key": "Content-Type", "value": "application/json" }],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"user_id\": \"user-demo-001\",\n  \"type\": \"expense\",\n  \"amount\": 25000,\n  \"category\": \"Makan\",\n  \"account\": \"GoPay\",\n  \"payment_method\": \"e-wallet\",\n  \"note\": \"Beli nasi goreng\",\n  \"date\": \"2025-07-30\"\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/transactions",
+                  "host": ["{{base_url}}"],
+                  "path": ["transactions"]
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "exec": [
+                      "pm.test('Status is 201', () => pm.response.to.have.status(201));",
+                      "pm.test('Transaction created and id saved', () => {",
+                      "  const json = pm.response.json();",
+                      "  pm.expect(json.success).to.be.true;",
+                      "  pm.expect(json.data.id).to.be.a('string');",
+                      "  pm.collectionVariables.set('transaction_id', json.data.id);",
+                      "});"
+                    ],
+                    "type": "text/javascript"
+                  }
+                }
+              ]
+            },
+            {
+              "name": "POST create transaction (missing fields → 400)",
+              "request": {
+                "method": "POST",
+                "header": [{ "key": "Content-Type", "value": "application/json" }],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"user_id\": \"user-demo-001\",\n  \"type\": \"expense\"\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/transactions",
+                  "host": ["{{base_url}}"],
+                  "path": ["transactions"]
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "exec": [
+                      "pm.test('Status is 400', () => pm.response.to.have.status(400));",
+                      "pm.test('Error envelope returned', () => {",
+                      "  const json = pm.response.json();",
+                      "  pm.expect(json.success).to.be.false;",
+                      "  pm.expect(json.error).to.be.a('string').and.not.empty;",
+                      "});"
+                    ],
+                    "type": "text/javascript"
+                  }
+                }
+              ]
+            },
+            {
+              "name": "PUT update transaction",
+              "request": {
+                "method": "PUT",
+                "header": [{ "key": "Content-Type", "value": "application/json" }],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"user_id\": \"user-demo-001\",\n  \"type\": \"expense\",\n  \"amount\": 30000,\n  \"category\": \"Makan\",\n  \"account\": \"GoPay\",\n  \"payment_method\": \"e-wallet\",\n  \"note\": \"Beli nasi goreng — updated\",\n  \"date\": \"2025-07-30\"\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/transactions/{{transaction_id}}",
+                  "host": ["{{base_url}}"],
+                  "path": ["transactions", "{{transaction_id}}"]
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "exec": [
+                      "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                      "pm.test('Amount updated', () => {",
+                      "  const json = pm.response.json();",
+                      "  pm.expect(json.success).to.be.true;",
+                      "  pm.expect(json.data.amount).to.equal(30000);",
+                      "});"
+                    ],
+                    "type": "text/javascript"
+                  }
+                }
+              ]
+            },
+            {
+              "name": "DELETE transaction",
+              "request": {
+                "method": "DELETE",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/transactions/{{transaction_id}}",
+                  "host": ["{{base_url}}"],
+                  "path": ["transactions", "{{transaction_id}}"]
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "exec": [
+                      "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                      "pm.test('Delete returns null data', () => {",
+                      "  const json = pm.response.json();",
+                      "  pm.expect(json.success).to.be.true;",
+                      "  pm.expect(json.data).to.be.null;",
+                      "});"
+                    ],
+                    "type": "text/javascript"
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "Categories",
+          "item": [
+            {
+              "name": "GET all categories",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/categories",
+                  "host": ["{{base_url}}"],
+                  "path": ["categories"]
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "exec": [
+                      "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                      "pm.test('Returns 8 categories with required fields', () => {",
+                      "  const json = pm.response.json();",
+                      "  pm.expect(json.success).to.be.true;",
+                      "  pm.expect(json.data).to.be.an('array').with.lengthOf(8);",
+                      "  json.data.forEach(c => {",
+                      "    pm.expect(c).to.have.all.keys('id','name','icon','type','color');",
+                      "  });",
+                      "});"
+                    ],
+                    "type": "text/javascript"
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "Summary",
+          "item": [
+            {
+              "name": "GET monthly summary",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/summary/{{demo_user_id}}",
+                  "host": ["{{base_url}}"],
+                  "path": ["summary", "{{demo_user_id}}"]
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "exec": [
+                      "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                      "pm.test('Summary has required fields', () => {",
+                      "  const data = pm.response.json().data;",
+                      "  pm.expect(data).to.have.all.keys('total_income','total_expenses','balance');",
+                      "  pm.expect(data.balance).to.equal(data.total_income - data.total_expenses);",
+                      "});"
+                    ],
+                    "type": "text/javascript"
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "ML API (localhost:8000)",
+      "item": [
+        {
+          "name": "GET health",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{ml_url}}/health",
+              "host": ["{{ml_url}}"],
+              "path": ["health"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Health returns ok', () => {",
+                  "  pm.expect(pm.response.json().status).to.equal('ok');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST predict spending",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"user_id\": \"user-demo-001\",\n  \"current_spending\": 1500000\n}"
+            },
+            "url": {
+              "raw": "{{ml_url}}/predict/spending",
+              "host": ["{{ml_url}}"],
+              "path": ["predict", "spending"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Spending prediction shape is valid', () => {",
+                  "  const json = pm.response.json();",
+                  "  pm.expect(json.predicted_amount).to.be.a('number').and.above(0);",
+                  "  pm.expect(json.currency).to.equal('IDR');",
+                  "  pm.expect(json.month).to.match(/^\\d{4}-\\d{2}$/);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST predict status (valid)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"user_id\": \"user-demo-001\",\n  \"current_spending\": 3500000,\n  \"monthly_income\": 5000000\n}"
+            },
+            "url": {
+              "raw": "{{ml_url}}/predict/status",
+              "host": ["{{ml_url}}"],
+              "path": ["predict", "status"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Status prediction shape is valid', () => {",
+                  "  const json = pm.response.json();",
+                  "  pm.expect(['AMAN','HATI-HATI','BOROS']).to.include(json.status);",
+                  "  pm.expect(json.confidence).to.be.within(0, 1);",
+                  "  pm.expect(json.reason).to.be.a('string').and.not.empty;",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST predict status (invalid body → 422)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"user_id\": \"user-demo-001\"\n}"
+            },
+            "url": {
+              "raw": "{{ml_url}}/predict/status",
+              "host": ["{{ml_url}}"],
+              "path": ["predict", "status"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 422', () => pm.response.to.have.status(422));",
+                  "pm.test('Validation error returned', () => {",
+                  "  const json = pm.response.json();",
+                  "  pm.expect(json).to.have.property('detail');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
