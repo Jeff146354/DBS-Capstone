@@ -6,7 +6,7 @@ import TransactionCard from '@/components/TransactionCard'
 import AddTransactionModal from '@/components/AddTransactionModal'
 import type { UserSession } from '@/app/page'
 
-const API_BASE = 'http://localhost:3001/api'
+import { API_BASE } from '@/lib/config'
 
 interface APITransaction {
   id: string

@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import type { UserSession } from '@/app/page'
 
-const API_BASE = 'http://localhost:3001/api'
+import { API_BASE } from '@/lib/config'
 
 interface LoginScreenProps {
   onLogin: (session: UserSession) => void

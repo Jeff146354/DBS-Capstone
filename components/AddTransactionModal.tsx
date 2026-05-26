@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react'
 import type { UserSession } from '@/app/page'
 import { formatCurrency } from '@/lib/mockData'
 
-const API_BASE = 'http://localhost:3001/api'
+import { API_BASE } from '@/lib/config'
 
 interface Category {
   id: string

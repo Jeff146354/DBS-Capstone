@@ -5,7 +5,7 @@ import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts'
 import { formatCurrency } from '@/lib/mockData'
 import type { UserSession } from '@/app/page'
 
-const API_BASE = 'http://localhost:3001/api'
+import { API_BASE } from '@/lib/config'
 
 const CHART_COLORS = ['#FF6B6B', '#4ECDC4', '#95E1D3', '#FFB3BA', '#A0E7E5', '#7FD8BE', '#4D96FF', '#6BCB77']
 

@@ -9,8 +9,7 @@ import AddTransactionModal from '@/components/AddTransactionModal'
 import type { UserSession } from '@/app/page'
 import type { TransactionFeatures } from '@/lib/api'
 
-const API_BASE = 'http://localhost:3001/api'
-const ML_BASE  = 'http://localhost:8000'
+import { API_BASE, ML_BASE } from '@/lib/config'
 
 interface APITransaction {
   id: string

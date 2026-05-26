@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { formatCurrency } from '@/lib/mockData'
 import type { UserSession } from '@/app/page'
 
-const API_BASE = 'http://localhost:3001/api'
+import { API_BASE } from '@/lib/config'
 
 interface APITransaction {
   type: 'expense' | 'income' | 'transfer'

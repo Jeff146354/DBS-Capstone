@@ -3,8 +3,7 @@
  * Base URLs point to the Express API (port 3001) and FastAPI ML stub (port 8000).
  */
 
-const API_BASE = 'http://localhost:3001/api'
-const ML_BASE = 'http://localhost:8000'
+import { API_BASE, ML_BASE } from '@/lib/config'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types matching the backend API response shapes
