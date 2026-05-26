@@ -1,4 +1,31 @@
-# v0 sandbox internal files
+# ── Next.js ──────────────────────────────────────────────────────────────────
+.next/
+node_modules/
+.env.local
+.env
+
+# ── Server ────────────────────────────────────────────────────────────────────
+server/.env
+server/node_modules/
+
+# ── ML API ────────────────────────────────────────────────────────────────────
+ml-api/__pycache__/
+ml-api/**/__pycache__/
+ml-api/.pytest_cache/
+ml-api/.venv/
+ml-api/.hypothesis/
+**/*.pyc
+**/*.pyo
+
+# ── Temp / training artifacts (do not commit) ─────────────────────────────────
+temp-info/
+
+# ── OS / Editor ───────────────────────────────────────────────────────────────
+.DS_Store
+.vscode/
+Thumbs.db
+
+# ── v0 sandbox internals ──────────────────────────────────────────────────────
 __v0_runtime_loader.js
 __v0_devtools.tsx
 __v0_jsx-dev-runtime.ts
@@ -6,25 +33,5 @@ __v0_jsx-dev-runtime.ts
 .v0-trash/
 .vercel/
 
-# Environment variables
-.env*.local
-
-# Common ignores
-node_modules
-.next/
-.DS_Store
-
-# Server
-server/.env
-server/node_modules/
-
-# ML API
-ml-api/__pycache__/
-ml-api/.pytest_cache/
-ml-api/.venv/
-
-# Next.js (if not already present)
-.next/
-node_modules/
-.env.local
-.env
+# ── Kiro IDE ──────────────────────────────────────────────────────────────────
+.kiro/

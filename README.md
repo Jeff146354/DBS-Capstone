@@ -1,163 +1,117 @@
-# Spendly — Intelligent Personal Finance Tracker
+# Spendly — Personal Finance Tracker
 
-Spendly is a personal finance tracker for Indonesian students and fresh graduates. It records daily transactions, visualises spending patterns, and uses ML to predict financial status.
+Intelligent personal finance tracker for Indonesian college students, powered by LSTM + Attention-based ML models.
 
-## Project Structure
+## Architecture
 
-```
-spendly/
-├── app/                    # Next.js frontend (pages & layouts)
-├── components/             # React UI components
-├── lib/                    # Shared utilities, mock data, API service
-│   ├── api.ts              # Live API service (set USE_MOCK=false to activate)
-│   └── mockData.ts         # Mock data (USE_MOCK=true by default)
-├── server/                 # Express REST API (Node.js + MySQL)
-│   ├── config/             # Database connection pool
-│   ├── controllers/        # Route handlers
-│   ├── db/                 # schema.sql + seed.sql
-│   ├── middleware/         # Error handler, request validation
-│   ├── routes/             # Express routers
-│   └── tests/              # Jest + fast-check test suite
-├── ml-api/                 # FastAPI ML stub (Python)
-│   ├── app/
-│   │   ├── main.py         # FastAPI app entry point
-│   │   ├── routers/        # Prediction endpoints
-│   │   └── schemas/        # Pydantic request/response models
-│   └── tests/              # pytest + Hypothesis test suite
-└── spendly.postman_collection.json  # Postman collection for manual testing
-```
+| Service | Stack | Port |
+|---------|-------|------|
+| Frontend | Next.js 16 + Tailwind CSS | 3000 |
+| REST API | Express + MySQL2 | 3001 |
+| ML API | FastAPI + Keras (TensorFlow) | 8000 |
+
+---
 
 ## Prerequisites
 
-- **Node.js** v18+ and npm
-- **Python** 3.10+
-- **MySQL** 8.0+
+- Node.js 18+
+- Python 3.11+
+- MySQL 8+
 
-## Quick Start
+---
 
-### 1. Database Setup
+## Local Setup
 
-Create a MySQL database and apply the schema and seed data:
+### 1. Clone & install frontend dependencies
 
 ```bash
-mysql -u <your_user> -p -e "CREATE DATABASE IF NOT EXISTS spendly;"
-mysql -u <your_user> -p spendly < server/db/schema.sql
-mysql -u <your_user> -p spendly < server/db/seed.sql
+git clone https://github.com/Jeff146354/DBS-Capstone.git
+cd DBS-Capstone
+npm install
 ```
 
-### 2. Express API Server (port 3001)
+### 2. Set up the Express API
 
 ```bash
 cd server
-cp .env.example .env
-# Edit .env with your MySQL credentials
 npm install
-npm run dev
+cp .env.example .env
+# Edit .env — set DB_PASSWORD to your MySQL root password
 ```
 
-The API will be available at `http://localhost:3001`.
+### 3. Run the database migration
 
-### 3. FastAPI ML Stub (port 8000)
+```bash
+cd server
+node db/migrate.js
+```
+
+### 4. Install ML API dependencies
 
 ```bash
 cd ml-api
 pip install -r requirements.txt
-uvicorn app.main:app --reload --port 8000
 ```
 
-The ML API will be available at `http://localhost:8000`.  
-Interactive docs: `http://localhost:8000/docs`
+> The Keras model files (`spendly_LSTM.keras`, `spendly_classifier.keras`) and scalers
+> (`scaler_lstm.pkl`, `scaler_classification.pkl`) must be placed in `ml-api/models/`.
 
-### 4. Next.js Frontend (port 3000)
+---
+
+## Running Locally
+
+Open **three terminals**:
 
 ```bash
-npm install
+# Terminal 1 — Frontend (http://localhost:3000)
 npm run dev
+
+# Terminal 2 — Express API (http://localhost:3001)
+cd server && npm run dev
+
+# Terminal 3 — ML API (http://localhost:8000)
+cd ml-api && uvicorn app.main:app --reload --port 8000
 ```
 
-The frontend will be available at `http://localhost:3000`.
-
-> **Note:** The frontend uses mock data by default (`USE_MOCK = true` in `lib/mockData.ts`).  
-> Set `USE_MOCK = false` to switch to live API calls once all three services are running.
+---
 
 ## Environment Variables
 
-Copy `server/.env.example` to `server/.env` and fill in your values:
+### `server/.env`
 
-| Variable      | Description                  | Default     |
-|---------------|------------------------------|-------------|
-| `DB_HOST`     | MySQL host                   | `localhost` |
-| `DB_PORT`     | MySQL port                   | `3306`      |
-| `DB_USER`     | MySQL username               | `root`      |
-| `DB_PASSWORD` | MySQL password               | *(empty)*   |
-| `DB_NAME`     | MySQL database name          | `spendly`   |
-| `PORT`        | Express server port          | `3001`      |
-
-## API Endpoints
-
-### Express API (`http://localhost:3001`)
-
-| Method   | Endpoint                        | Description                          |
-|----------|---------------------------------|--------------------------------------|
-| `GET`    | `/api/transactions`             | List all transactions (optional `?month=YYYY-MM`) |
-| `GET`    | `/api/transactions/:id`         | Get single transaction               |
-| `POST`   | `/api/transactions`             | Create new transaction               |
-| `PUT`    | `/api/transactions/:id`         | Update transaction                   |
-| `DELETE` | `/api/transactions/:id`         | Delete transaction                   |
-| `GET`    | `/api/categories`               | List all categories                  |
-| `GET`    | `/api/summary/:user_id`         | Monthly income/expense totals        |
-
-### FastAPI ML Stub (`http://localhost:8000`)
-
-| Method | Endpoint              | Description                              |
-|--------|-----------------------|------------------------------------------|
-| `GET`  | `/health`             | Health check                             |
-| `POST` | `/predict/spending`   | Predict next-month spending              |
-| `POST` | `/predict/status`     | Classify status: AMAN / HATI-HATI / BOROS |
-
-## Testing
-
-### Express API (Jest + fast-check)
-
-```bash
-cd server
-node node_modules/jest/bin/jest.js --forceExit
+```
+DB_HOST=localhost
+DB_PORT=3306
+DB_USER=root
+DB_PASSWORD=your_password
+DB_NAME=spendly
+PORT=3001
 ```
 
-### FastAPI ML Stub (pytest + Hypothesis)
+---
+
+## ML Models
+
+The app uses two Keras models:
+
+| Model | File | Purpose |
+|-------|------|---------|
+| LSTM Forecaster | `spendly_LSTM.keras` | Predicts next-month spending |
+| Classifier | `spendly_classifier.keras` | Classifies status: AMAN / HATI-HATI / BOROS |
+
+Both models and their fitted `StandardScaler` files must be placed in `ml-api/models/`.
+Set `SPENDLY_USE_MODELS=0` to disable ML inference and use rule-based fallback (useful for testing).
+
+---
+
+## Running Tests
 
 ```bash
+# ML API tests
 cd ml-api
-pytest tests/ -v
+SPENDLY_USE_MODELS=0 pytest tests/ -v
+
+# Express API tests
+cd server
+npm test
 ```
-
-### Manual Testing (Postman)
-
-Import `spendly.postman_collection.json` into Postman. The collection includes all endpoints with example bodies and test assertions. Run the "POST create transaction (valid)" request first — it auto-saves the returned `transaction_id` for use in subsequent requests.
-
-## Demo Data
-
-The seed data (`server/db/seed.sql`) includes:
-
-- **1 demo user**: Raihanah (`user-demo-001`), monthly income Rp 5,000,000
-- **8 categories**: 6 expense (Makan, Transport, Belanja, Pendidikan, Hiburan, Lain-lain) + 2 income (Gaji, Freelance)
-- **25 transactions**: July 2025, realistic IDR amounts
-- **8 budget limits**: One per category for July 2025
-
-## Switching from Mock to Live Data
-
-1. Ensure all three services are running (steps 2–4 above)
-2. Open `lib/mockData.ts`
-3. Change `export const USE_MOCK = true` to `export const USE_MOCK = false`
-4. Refresh the frontend
-
-## Tech Stack
-
-| Layer       | Technology                        |
-|-------------|-----------------------------------|
-| Frontend    | Next.js 16, React 19, Tailwind CSS |
-| Backend API | Node.js, Express, MySQL2          |
-| Database    | MySQL 8                           |
-| ML API      | FastAPI, Pydantic, Uvicorn        |
-| Testing     | Jest, fast-check, pytest, Hypothesis |
-| Deployment  | Vercel (frontend), Railway/Render (backend) |

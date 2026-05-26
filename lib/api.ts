@@ -44,6 +44,28 @@ interface APIPredictionStatus {
   reason: string
 }
 
+/** The 12 engineered features for a single transaction snapshot. */
+export interface TransactionFeatures {
+  amount: number
+  week_of_month: number
+  day_of_month: number
+  month_budget: number
+  daily_budget: number
+  cum_expense_daily: number
+  cum_expense_monthly: number
+  current_budget: number
+  spending_ratio: number
+  trx_frequency: number
+  rolling_avg_7d: number
+  expense_acceleration: number
+}
+
+interface APISpendingForecast {
+  predicted_amount: number
+  currency: string
+  month: string // YYYY-MM
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Helper: check API response envelope
 // ─────────────────────────────────────────────────────────────────────────────
@@ -118,21 +140,72 @@ export async function getMonthlySummary(userId: string): Promise<APIMonthlySumma
 
 /**
  * POST /predict/status
- * Returns financial status prediction (AMAN / HATI-HATI / BOROS).
+ * Classify financial status from a single transaction snapshot.
+ * Returns AMAN / HATI-HATI / BOROS with confidence and reason.
  */
 export async function getPrediction(
-  userId: string,
-  currentSpending: number,
-  monthlyIncome: number
+  features: TransactionFeatures
 ): Promise<APIPredictionStatus> {
   const res = await fetch(`${ML_BASE}/predict/status`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      user_id: userId,
-      current_spending: currentSpending,
-      monthly_income: monthlyIncome,
-    }),
+    body: JSON.stringify(features),
   })
   return res.json()
+}
+
+/**
+ * POST /predict/spending
+ * Predict next month's total spending using the LSTM model.
+ * Requires a sequence of exactly 7 transaction snapshots (oldest → newest).
+ */
+export async function getSpendingForecast(
+  sequence: TransactionFeatures[]
+): Promise<APISpendingForecast> {
+  if (sequence.length !== 7) {
+    throw new Error('LSTM forecast requires exactly 7 transaction snapshots')
+  }
+  const res = await fetch(`${ML_BASE}/predict/spending`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ sequence }),
+  })
+  return res.json()
+}
+
+/**
+ * Helper: build a TransactionFeatures object from raw transaction data.
+ * Call this to construct the features dict before calling getPrediction or getSpendingForecast.
+ */
+export function buildTransactionFeatures(params: {
+  amount: number
+  dayOfMonth: number
+  weekOfMonth: number
+  monthBudget: number
+  dailyBudget: number
+  cumExpenseDaily: number
+  cumExpenseMonthly: number
+  trxFrequency: number
+  rollingAvg7d: number
+  expenseAcceleration: number
+}): TransactionFeatures {
+  const currentBudget = params.monthBudget - params.cumExpenseMonthly
+  const spendingRatio = params.monthBudget > 0
+    ? params.cumExpenseMonthly / params.monthBudget
+    : 0
+
+  return {
+    amount: params.amount,
+    week_of_month: params.weekOfMonth,
+    day_of_month: params.dayOfMonth,
+    month_budget: params.monthBudget,
+    daily_budget: params.dailyBudget,
+    cum_expense_daily: params.cumExpenseDaily,
+    cum_expense_monthly: params.cumExpenseMonthly,
+    current_budget: currentBudget,
+    spending_ratio: spendingRatio,
+    trx_frequency: params.trxFrequency,
+    rolling_avg_7d: params.rollingAvg7d,
+    expense_acceleration: params.expenseAcceleration,
+  }
 }

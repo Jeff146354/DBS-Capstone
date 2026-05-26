@@ -27,4 +27,22 @@ def health() -> dict:
     return {"status": "ok"}
 
 
+@app.get("/models/info", tags=["health"])
+def models_info() -> dict:
+    """Check which ML models are loaded and available."""
+    import os
+    from pathlib import Path
+
+    models_dir = Path(__file__).resolve().parent.parent / "models"
+    lstm_exists = (models_dir / "spendly_LSTM.keras").exists()
+    classifier_exists = (models_dir / "spendly_classifier.keras").exists()
+    use_models = os.environ.get("SPENDLY_USE_MODELS", "1") != "0"
+
+    return {
+        "models_enabled": use_models,
+        "lstm_model": {"file_exists": lstm_exists, "input_shape": "(batch, 7, 12)", "output_shape": "(batch, 1)"},
+        "classifier_model": {"file_exists": classifier_exists, "input_shape": "(batch, 12)", "output_shape": "(batch, 3)"},
+    }
+
+
 app.include_router(predict.router, prefix="/predict")

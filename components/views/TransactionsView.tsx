@@ -1,120 +1,153 @@
 'use client'
 
-import { useMemo } from 'react'
-import { mockTransactions, formatCurrency } from '@/lib/mockData'
+import { useState, useEffect, useCallback, useMemo } from 'react'
+import { formatCurrency } from '@/lib/mockData'
 import TransactionCard from '@/components/TransactionCard'
+import AddTransactionModal from '@/components/AddTransactionModal'
+import type { UserSession } from '@/app/page'
 
-export default function TransactionsView() {
-  const groupedTransactions = useMemo(() => {
-    const grouped: {
-      expenses: typeof mockTransactions;
-      income: typeof mockTransactions;
-      transfers: typeof mockTransactions;
-    } = {
-      expenses: [],
-      income: [],
-      transfers: []
-    }
+const API_BASE = 'http://localhost:3001/api'
 
-    mockTransactions.forEach(tx => {
-      if (tx.type === 'expense') grouped.expenses.push(tx)
-      else if (tx.type === 'income') grouped.income.push(tx)
-      else grouped.transfers.push(tx)
-    })
+interface APITransaction {
+  id: string
+  type: 'expense' | 'income' | 'transfer'
+  amount: number
+  category: string
+  category_icon: string
+  account: string
+  payment_method: string
+  note?: string
+  date: string
+}
 
-    // Sort each group by date descending
-    grouped.expenses.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
-    grouped.income.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
-    grouped.transfers.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+type FilterType = 'all' | 'expense' | 'income'
 
-    return grouped
-  }, [])
+interface TransactionsViewProps {
+  session: UserSession
+}
 
-  const calculateGroupTotal = (transactions: typeof mockTransactions) => {
-    return transactions.reduce((sum, tx) => sum + tx.amount, 0)
-  }
+export default function TransactionsView({ session }: TransactionsViewProps) {
+  const [transactions, setTransactions] = useState<APITransaction[]>([])
+  const [loading, setLoading] = useState(true)
+  const [filter, setFilter] = useState<FilterType>('all')
+  const [showModal, setShowModal] = useState(false)
+  const [selectedMonth, setSelectedMonth] = useState(new Date().toISOString().slice(0, 7))
 
-  const TransactionGroup = ({ 
-    title, 
-    transactions, 
-    type 
-  }: { 
-    title: string
-    transactions: typeof mockTransactions
-    type: 'expense' | 'income' | 'transfer'
-  }) => {
-    if (transactions.length === 0) return null
+  const fetchTransactions = useCallback(async () => {
+    setLoading(true)
+    try {
+      const res = await fetch(`${API_BASE}/transactions?user_id=${session.userId}&month=${selectedMonth}`)
+      const json = await res.json()
+      if (json.success) setTransactions(json.data)
+    } catch { }
+    finally { setLoading(false) }
+  }, [selectedMonth])
 
-    const total = calculateGroupTotal(transactions)
-    const totalColor = type === 'income' ? 'text-success' : type === 'expense' ? 'text-danger' : 'text-accent'
+  useEffect(() => { fetchTransactions() }, [fetchTransactions])
 
-    return (
-      <div className="space-y-3">
-        <h3 className="font-semibold text-text-secondary text-sm">{title}</h3>
-        <div className="space-y-2">
-          {transactions.map(tx => (
-            <TransactionCard
-              key={tx.id}
-              date={tx.date}
-              category={tx.category}
-              categoryEmoji={tx.categoryEmoji}
-              merchant={tx.merchant}
-              amount={tx.amount}
-              type={tx.type}
-              account={tx.account}
-            />
-          ))}
-        </div>
-        <div className="card-solid p-3 flex justify-between bg-bg-tertiary">
-          <span className="text-text-secondary text-sm">Total {title}:</span>
-          <span className={`font-mono font-semibold text-sm ${totalColor}`}>
-            {type === 'income' ? '+' : type === 'expense' ? '-' : ''}
-            {formatCurrency(total)}
-          </span>
-        </div>
-      </div>
-    )
-  }
+  const filtered = useMemo(() =>
+    filter === 'all' ? transactions : transactions.filter(t => t.type === filter),
+    [transactions, filter]
+  )
+
+  const total = useMemo(() => filtered.reduce((s, t) => s + (t.type === 'expense' ? -t.amount : t.amount), 0), [filtered])
+
+  const FILTERS: { key: FilterType; label: string }[] = [
+    { key: 'all', label: 'Semua' },
+    { key: 'expense', label: 'Pengeluaran' },
+    { key: 'income', label: 'Pendapatan' },
+  ]
 
   return (
-    <div className="p-4 space-y-6">
-      {/* Header */}
-      <div className="space-y-2">
-        <h1 className="text-2xl font-bold text-text-primary">Transaksi</h1>
-        <p className="text-text-secondary text-sm">Riwayat semua transaksi</p>
+    <>
+      <div className="p-4 space-y-6">
+        <div className="space-y-2">
+          <h1 className="text-2xl font-bold text-text-primary">Transaksi</h1>
+          <p className="text-text-secondary text-sm">Riwayat semua transaksi</p>
+        </div>
+
+        {/* Month picker */}
+        <div className="card-solid p-3 flex items-center gap-3">
+          <span className="text-text-secondary text-xs">Bulan:</span>
+          <input
+            type="month"
+            value={selectedMonth}
+            onChange={e => setSelectedMonth(e.target.value)}
+            className="flex-1 bg-bg-tertiary px-3 py-2 rounded-lg text-text-primary text-sm focus:outline-none focus:ring-2 focus:ring-accent/50"
+          />
+        </div>
+
+        {/* Filter tabs */}
+        <div className="card-solid p-1 flex rounded-xl gap-1">
+          {FILTERS.map(f => (
+            <button
+              key={f.key}
+              onClick={() => setFilter(f.key)}
+              className={`flex-1 py-2 rounded-lg text-xs font-semibold transition-colors ${
+                filter === f.key ? 'bg-accent text-background' : 'text-text-secondary hover:text-text-primary'
+              }`}
+            >
+              {f.label}
+            </button>
+          ))}
+        </div>
+
+        {/* Summary */}
+        {filtered.length > 0 && (
+          <div className="card-solid p-3 flex justify-between items-center">
+            <span className="text-text-secondary text-sm">{filtered.length} transaksi</span>
+            <span className={`font-mono font-semibold text-sm ${total >= 0 ? 'text-success' : 'text-danger'}`}>
+              {total >= 0 ? '+' : ''}{formatCurrency(total)}
+            </span>
+          </div>
+        )}
+
+        {/* List */}
+        {loading ? (
+          <div className="card-solid p-8 text-center">
+            <p className="text-text-secondary text-sm">Memuat...</p>
+          </div>
+        ) : filtered.length === 0 ? (
+          <div className="card-solid p-8 text-center space-y-2">
+            <p className="text-text-secondary">Tidak ada transaksi</p>
+            <button onClick={() => setShowModal(true)} className="text-accent text-sm hover:underline">
+              + Tambah transaksi
+            </button>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {filtered.map(tx => (
+              <TransactionCard
+                key={tx.id}
+                date={new Date(tx.date)}
+                category={tx.category}
+                categoryEmoji={tx.category_icon}
+                merchant={tx.note || tx.category}
+                amount={tx.amount}
+                type={tx.type}
+                account={tx.account}
+              />
+            ))}
+          </div>
+        )}
       </div>
 
-      {/* Filter Controls */}
-      <div className="card-solid p-3 flex gap-2">
-        <button className="flex-1 px-3 py-2 bg-accent text-background rounded-lg text-xs font-semibold hover:bg-accent-dark transition-colors">
-          Semua
-        </button>
-        <button className="flex-1 px-3 py-2 bg-bg-tertiary text-text-primary rounded-lg text-xs font-semibold hover:bg-accent/10 transition-colors">
-          Pengeluaran
-        </button>
-        <button className="flex-1 px-3 py-2 bg-bg-tertiary text-text-primary rounded-lg text-xs font-semibold hover:bg-accent/10 transition-colors">
-          Pendapatan
-        </button>
-      </div>
+      {/* FAB */}
+      <button
+        onClick={() => setShowModal(true)}
+        className="fixed bottom-24 right-4 w-14 h-14 bg-accent text-background rounded-full flex items-center justify-center font-bold text-2xl hover:bg-accent-dark transition-all shadow-glow z-40"
+        aria-label="Tambah transaksi"
+      >
+        +
+      </button>
 
-      {/* Transaction Groups */}
-      <div className="space-y-8">
-        <TransactionGroup 
-          title="Pengeluaran" 
-          transactions={groupedTransactions.expenses}
-          type="expense"
+      {showModal && (
+        <AddTransactionModal
+          session={session}
+          onClose={() => setShowModal(false)}
+          onAdded={fetchTransactions}
         />
-        <TransactionGroup 
-          title="Pendapatan" 
-          transactions={groupedTransactions.income}
-          type="income"
-        />
-        <TransactionGroup 
-          title="Transfer" 
-          transactions={groupedTransactions.transfers}
-          type="transfer"
-        />
-      </div>
-    </div>
+      )}
+    </>
   )
 }

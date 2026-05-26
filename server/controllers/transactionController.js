@@ -23,17 +23,27 @@ const SELECT_TRANSACTION = `
 
 /**
  * GET /api/transactions
- * Optional query param: ?month=YYYY-MM
+ * Optional query params: ?user_id=...  ?month=YYYY-MM
  */
 async function getAll(req, res, next) {
   try {
     let sql = SELECT_TRANSACTION
     const params = []
+    const conditions = []
+
+    if (req.query.user_id) {
+      conditions.push('t.user_id = ?')
+      params.push(req.query.user_id)
+    }
 
     if (req.query.month) {
       const [year, month] = req.query.month.split('-').map(Number)
-      sql += ' WHERE YEAR(t.date) = ? AND MONTH(t.date) = ?'
+      conditions.push('YEAR(t.date) = ? AND MONTH(t.date) = ?')
       params.push(year, month)
+    }
+
+    if (conditions.length > 0) {
+      sql += ' WHERE ' + conditions.join(' AND ')
     }
 
     sql += ' ORDER BY t.date DESC, t.created_at DESC'

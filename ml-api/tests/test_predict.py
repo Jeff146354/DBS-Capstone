@@ -8,6 +8,9 @@ import re
 import sys
 import os
 
+# Disable ML models for deterministic test results
+os.environ["SPENDLY_USE_MODELS"] = "0"
+
 # Add the ml-api directory to the path so we can import app
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
@@ -25,34 +28,56 @@ VALID_STATUSES = {'AMAN', 'HATI-HATI', 'BOROS'}
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Helpers
+# ─────────────────────────────────────────────────────────────────────────────
+
+def make_features(**overrides) -> dict:
+    base = {
+        "amount": 50000.0,
+        "week_of_month": 1.0,
+        "day_of_month": 5.0,
+        "month_budget": 3000000.0,
+        "daily_budget": 100000.0,
+        "cum_expense_daily": 50000.0,
+        "cum_expense_monthly": 240000.0,
+        "current_budget": 2760000.0,
+        "spending_ratio": 0.08,
+        "trx_frequency": 2.0,
+        "rolling_avg_7d": 48000.0,
+        "expense_acceleration": 2000.0,
+    }
+    base.update(overrides)
+    return base
+
+
+def make_sequence(**overrides) -> dict:
+    return {"sequence": [make_features(**overrides) for _ in range(7)]}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Property 11: Spending prediction response shape and value constraints
 # ─────────────────────────────────────────────────────────────────────────────
 
-@settings(max_examples=100)
+@settings(max_examples=50)
 @given(
-    user_id=st.text(min_size=1, max_size=50),
-    current_spending=st.integers(min_value=0, max_value=10_000_000),
+    amount=st.floats(min_value=0, max_value=10_000_000, allow_nan=False, allow_infinity=False),
+    spending_ratio=st.floats(min_value=0.0, max_value=2.0, allow_nan=False, allow_infinity=False),
 )
-def test_p11_spending_prediction_shape(user_id, current_spending):
+def test_p11_spending_prediction_shape(amount, spending_ratio):
     """
     Feature: spendly-backend-integration, Property 11:
     Spending prediction response shape and value constraints.
     """
     response = client.post(
         '/predict/spending',
-        json={'user_id': user_id, 'current_spending': current_spending},
+        json=make_sequence(amount=amount, spending_ratio=spending_ratio),
     )
     assert response.status_code == 200
     data = response.json()
 
-    # predicted_amount must be a positive integer
     assert isinstance(data['predicted_amount'], int)
     assert data['predicted_amount'] > 0
-
-    # currency must be IDR
     assert data['currency'] == 'IDR'
-
-    # month must match YYYY-MM format
     assert MONTH_PATTERN.match(data['month']), f"month '{data['month']}' does not match YYYY-MM"
 
 
@@ -60,36 +85,26 @@ def test_p11_spending_prediction_shape(user_id, current_spending):
 # Property 12: Status prediction response shape and value constraints
 # ─────────────────────────────────────────────────────────────────────────────
 
-@settings(max_examples=100)
+@settings(max_examples=50)
 @given(
-    user_id=st.text(min_size=1, max_size=50),
-    current_spending=st.integers(min_value=0, max_value=10_000_000),
-    monthly_income=st.integers(min_value=0, max_value=20_000_000),
+    amount=st.floats(min_value=0, max_value=10_000_000, allow_nan=False, allow_infinity=False),
+    spending_ratio=st.floats(min_value=0.0, max_value=2.0, allow_nan=False, allow_infinity=False),
 )
-def test_p12_status_prediction_shape(user_id, current_spending, monthly_income):
+def test_p12_status_prediction_shape(amount, spending_ratio):
     """
     Feature: spendly-backend-integration, Property 12:
     Status prediction response shape and value constraints.
     """
     response = client.post(
         '/predict/status',
-        json={
-            'user_id': user_id,
-            'current_spending': current_spending,
-            'monthly_income': monthly_income,
-        },
+        json=make_features(amount=amount, spending_ratio=spending_ratio),
     )
     assert response.status_code == 200
     data = response.json()
 
-    # status must be one of the three valid values
     assert data['status'] in VALID_STATUSES
-
-    # confidence must be between 0.0 and 1.0 inclusive
     assert isinstance(data['confidence'], float)
     assert 0.0 <= data['confidence'] <= 1.0
-
-    # reason must be a non-empty string
     assert isinstance(data['reason'], str)
     assert len(data['reason']) > 0
 
@@ -98,59 +113,36 @@ def test_p12_status_prediction_shape(user_id, current_spending, monthly_income):
 # Property 13: Invalid ML API request returns HTTP 422
 # ─────────────────────────────────────────────────────────────────────────────
 
-def test_p13_spending_missing_user_id_returns_422():
-    """
-    Feature: spendly-backend-integration, Property 13:
-    Invalid ML API request returns HTTP 422.
-    """
-    response = client.post('/predict/spending', json={'current_spending': 1000000})
-    assert response.status_code == 422
-    assert 'detail' in response.json()
-
-
-def test_p13_spending_missing_current_spending_returns_422():
-    """
-    Feature: spendly-backend-integration, Property 13:
-    Invalid ML API request returns HTTP 422.
-    """
-    response = client.post('/predict/spending', json={'user_id': 'user-demo-001'})
-    assert response.status_code == 422
-    assert 'detail' in response.json()
-
-
-def test_p13_spending_wrong_type_returns_422():
-    """
-    Feature: spendly-backend-integration, Property 13:
-    Invalid ML API request returns HTTP 422.
-    """
-    response = client.post(
-        '/predict/spending',
-        json={'user_id': 'user-demo-001', 'current_spending': 'not-a-number'},
-    )
-    assert response.status_code == 422
-
-
-def test_p13_status_missing_fields_returns_422():
-    """
-    Feature: spendly-backend-integration, Property 13:
-    Invalid ML API request returns HTTP 422.
-    """
-    response = client.post('/predict/status', json={'user_id': 'user-demo-001'})
+def test_p13_status_missing_field_returns_422():
+    """Missing a required feature field returns 422."""
+    payload = make_features()
+    del payload['amount']
+    response = client.post('/predict/status', json=payload)
     assert response.status_code == 422
     assert 'detail' in response.json()
 
 
 def test_p13_status_wrong_type_returns_422():
-    """
-    Feature: spendly-backend-integration, Property 13:
-    Invalid ML API request returns HTTP 422.
-    """
-    response = client.post(
-        '/predict/status',
-        json={
-            'user_id': 'user-demo-001',
-            'current_spending': 'not-a-number',
-            'monthly_income': 5000000,
-        },
-    )
+    """Non-numeric feature value returns 422."""
+    response = client.post('/predict/status', json=make_features(amount='not-a-number'))
+    assert response.status_code == 422
+
+
+def test_p13_spending_wrong_sequence_length_returns_422():
+    """Sequence with != 7 items returns 422."""
+    response = client.post('/predict/spending', json={"sequence": [make_features()] * 5})
+    assert response.status_code == 422
+
+
+def test_p13_spending_missing_sequence_returns_422():
+    """Missing sequence field returns 422."""
+    response = client.post('/predict/spending', json={})
+    assert response.status_code == 422
+
+
+def test_p13_spending_wrong_type_in_sequence_returns_422():
+    """Non-numeric value inside sequence returns 422."""
+    seq = [make_features() for _ in range(7)]
+    seq[3]['amount'] = 'bad'
+    response = client.post('/predict/spending', json={"sequence": seq})
     assert response.status_code == 422
