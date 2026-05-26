@@ -13,7 +13,12 @@ const app = express()
 
 // ── Middleware ────────────────────────────────────────────────────────────────
 app.use(cors({
-  origin: ['http://localhost:5173', 'http://localhost:3000'],
+  origin: [
+    'http://localhost:5173',
+    'http://localhost:3000',
+    'https://dbs-capstone-deploy.vercel.app',
+    /\.vercel\.app$/,  // allow all Vercel preview deployments
+  ],
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
 }))
