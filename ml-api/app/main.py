@@ -27,6 +27,31 @@ def health() -> dict:
     return {"status": "ok"}
 
 
+@app.get("/metrics", tags=["health"])
+def metrics() -> dict:
+    """Live memory and model usage stats."""
+    import os
+    import psutil
+
+    process = psutil.Process(os.getpid())
+    mem = process.memory_info()
+    vm  = psutil.virtual_memory()
+
+    return {
+        "process": {
+            "rss_mb":  round(mem.rss  / 1024 / 1024, 1),   # actual RAM used by this process
+            "vms_mb":  round(mem.vms  / 1024 / 1024, 1),   # virtual memory
+        },
+        "system": {
+            "total_mb":     round(vm.total     / 1024 / 1024, 1),
+            "available_mb": round(vm.available / 1024 / 1024, 1),
+            "used_mb":      round(vm.used      / 1024 / 1024, 1),
+            "percent":      vm.percent,
+        },
+        "models_enabled": os.environ.get("SPENDLY_USE_MODELS", "1") != "0",
+    }
+
+
 @app.get("/models/info", tags=["health"])
 def models_info() -> dict:
     """Check which ML models are loaded and available."""
