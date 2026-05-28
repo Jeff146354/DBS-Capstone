@@ -171,7 +171,7 @@ Pastikan nada: hangat, tidak menghakimi, dan memotivasi."""
 
     url = "https://openrouter.ai/api/v1/chat/completions"
     payload = {
-        "model": "mistralai/mistral-7b-instruct:free",
+        "model": "google/gemma-3-12b-it:free",
         "messages": [{"role": "user", "content": prompt}],
         "max_tokens": 700,
         "temperature": 0.4,
