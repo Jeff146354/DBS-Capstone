@@ -123,32 +123,130 @@ def predict_status(req: StatusRequest) -> StatusResponse:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# POST /predict/insights  — OpenRouter Gen-AI
+# POST /predict/insights  — Gemini first, OpenRouter fallback
 # ─────────────────────────────────────────────────────────────────────────────
 
-# Free models tried in order. If a model returns 429 (upstream rate-limited)
-# or 404 (removed), we move to the next one. Any other error is raised immediately.
-# This list is the only place to update when models change.
-_FREE_MODELS = [
+# OpenRouter free models tried if Gemini fails (429, 503, or any error).
+_OPENROUTER_FREE_MODELS = [
     "meta-llama/llama-3.3-70b-instruct:free",
     "deepseek/deepseek-v4-flash:free",
     "google/gemma-4-26b-a4b-it:free",
     "qwen/qwen3-next-80b-a3b-instruct:free",
 ]
 
+# Gemini status codes that mean "try fallback" vs "real error"
+_GEMINI_RETRYABLE = {429, 500, 503}
+
+
+async def _call_gemini(prompt: str, api_key: str, client: httpx.AsyncClient) -> str | None:
+    """
+    Call Gemini 3.1 Flash-Lite. Returns the text on success.
+    Returns None on retryable errors (429/500/503) so caller can fall back.
+    Raises HTTPException on non-retryable errors (400, 401, 404, etc.).
+    """
+    url = (
+        "https://generativelanguage.googleapis.com/v1beta/models"
+        f"/gemini-3.1-flash-lite:generateContent?key={api_key}"
+    )
+    payload = {
+        "contents": [{"parts": [{"text": prompt}]}],
+        "generationConfig": {"maxOutputTokens": 700, "temperature": 0.4},
+    }
+    try:
+        resp = await client.post(url, json=payload)
+    except httpx.TimeoutException:
+        logger.warning("Gemini timeout — falling back to OpenRouter")
+        return None
+
+    if resp.status_code in _GEMINI_RETRYABLE:
+        body = resp.json()
+        msg = body.get("error", {}).get("message", resp.text[:120])
+        logger.warning("Gemini skipped (%s): %s", resp.status_code, msg)
+        return None
+
+    if resp.status_code != 200:
+        body = resp.json()
+        msg = body.get("error", {}).get("message", resp.text[:200])
+        raise HTTPException(
+            status_code=502,
+            detail=f"Gemini API error {resp.status_code}: {msg}",
+        )
+
+    try:
+        text = resp.json()["candidates"][0]["content"]["parts"][0]["text"].strip()
+        logger.info("Gemini succeeded")
+        return text
+    except (KeyError, IndexError) as exc:
+        raise HTTPException(status_code=502, detail=f"Unexpected Gemini response shape: {exc}")
+
+
+async def _call_openrouter(prompt: str, api_key: str, client: httpx.AsyncClient) -> str:
+    """
+    Try each OpenRouter free model in order. Returns text on first success.
+    Raises HTTPException if all models are exhausted.
+    """
+    url = "https://openrouter.ai/api/v1/chat/completions"
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+        "HTTP-Referer": "https://dbs-capstone-deploy.vercel.app",
+        "X-Title": "Spendly AI",
+    }
+    skipped: list[str] = []
+
+    for model in _OPENROUTER_FREE_MODELS:
+        payload = {
+            "model": model,
+            "messages": [{"role": "user", "content": prompt}],
+            "max_tokens": 700,
+            "temperature": 0.4,
+        }
+        try:
+            resp = await client.post(url, json=payload, headers=headers)
+        except httpx.TimeoutException:
+            raise HTTPException(status_code=504, detail=f"OpenRouter timeout on model {model}.")
+        except Exception as exc:
+            raise HTTPException(status_code=502, detail=f"OpenRouter request failed: {exc}")
+
+        if resp.status_code in (429, 404):
+            reason = resp.json().get("error", {}).get("message", resp.text[:120])
+            logger.warning("OpenRouter model %s skipped (%s): %s", model, resp.status_code, reason)
+            skipped.append(f"{model} [{resp.status_code}]: {reason}")
+            continue
+
+        if resp.status_code != 200:
+            raise HTTPException(
+                status_code=502,
+                detail=f"OpenRouter error {resp.status_code} on {model}: {resp.text[:300]}",
+            )
+
+        try:
+            text = resp.json()["choices"][0]["message"]["content"].strip()
+            if skipped:
+                logger.info("OpenRouter used %s after skipping: %s", model, "; ".join(skipped))
+            return text
+        except (KeyError, IndexError) as exc:
+            raise HTTPException(status_code=502, detail=f"Unexpected OpenRouter response from {model}: {exc}")
+
+    raise HTTPException(
+        status_code=502,
+        detail=f"All OpenRouter models rate-limited. Tried: {'; '.join(skipped)}",
+    )
+
 
 @router.post("/insights", response_model=InsightsResponse)
 async def predict_insights(req: InsightsRequest) -> InsightsResponse:
     """
-    Generate personalised financial advice using OpenRouter API.
-    Requires OPENROUTER_API_KEY environment variable.
-    Tries each model in _FREE_MODELS in order; skips on 429/404 (upstream limits).
-    Caches the last successful response per user+financial-state for 6 hours,
-    so rate-limited retries serve real cached AI output instead of erroring.
+    Generate personalised financial advice.
+    Strategy: Gemini 3.1 Flash-Lite first → OpenRouter free models fallback.
+    Requires GEMINI_API_KEY and/or OPENROUTER_API_KEY environment variables.
+    Caches successful responses per user+financial-state for 6 hours.
     """
-    api_key = os.environ.get("OPENROUTER_API_KEY", "")
-    if not api_key:
-        raise HTTPException(status_code=503, detail="OPENROUTER_API_KEY not configured.")
+    gemini_key = os.environ.get("GEMINI_API_KEY", "")
+    openrouter_key = os.environ.get("OPENROUTER_API_KEY", "")
+
+    if not gemini_key and not openrouter_key:
+        raise HTTPException(status_code=503, detail="No AI API keys configured (GEMINI_API_KEY or OPENROUTER_API_KEY).")
 
     cache_key = _insight_cache_key(req)
     now = time.time()
@@ -161,10 +259,9 @@ async def predict_insights(req: InsightsRequest) -> InsightsResponse:
         if age < INSIGHT_CACHE_TTL_SECONDS:
             logger.info("Serving cached insight for %s (age %.0fs)", req.user_name, age)
             return InsightsResponse(insight=cached_text)
-        else:
-            del _insight_cache[cache_key]  # expired, remove it
+        del _insight_cache[cache_key]
 
-    # ── Per-user rate limit — prevents hammering when cache is cold ──────────
+    # ── Per-user rate limit ───────────────────────────────────────────────────
     user_key = req.user_name
     last = _insight_last_called.get(user_key, 0)
     wait = INSIGHT_COOLDOWN_SECONDS - (now - last)
@@ -217,65 +314,23 @@ Apakah perlu waspada? Apakah tren membaik atau memburuk?]
 
 Pastikan nada: hangat, tidak menghakimi, dan memotivasi."""
 
-    url = "https://openrouter.ai/api/v1/chat/completions"
-    headers = {
-        "Authorization": f"Bearer {api_key}",
-        "Content-Type": "application/json",
-        "HTTP-Referer": "https://dbs-capstone-deploy.vercel.app",
-        "X-Title": "Spendly AI",
-    }
-
-    skipped: list[str] = []
-
     async with httpx.AsyncClient(timeout=30.0) as client:
-        for model in _FREE_MODELS:
-            payload = {
-                "model": model,
-                "messages": [{"role": "user", "content": prompt}],
-                "max_tokens": 700,
-                "temperature": 0.4,
-            }
+        text: str | None = None
 
-            try:
-                resp = await client.post(url, json=payload, headers=headers)
-            except httpx.TimeoutException:
-                raise HTTPException(status_code=504, detail=f"OpenRouter timeout on model {model}.")
-            except Exception as exc:
-                raise HTTPException(status_code=502, detail=f"OpenRouter request failed: {exc}")
+        # ── 1. Try Gemini first ───────────────────────────────────────────────
+        if gemini_key:
+            text = await _call_gemini(prompt, gemini_key, client)
 
-            # 429 or 404 from upstream → try next model
-            if resp.status_code in (429, 404):
-                reason = resp.json().get("error", {}).get("message", resp.text[:120])
-                logger.warning("Model %s skipped (%s): %s", model, resp.status_code, reason)
-                skipped.append(f"{model} [{resp.status_code}]: {reason}")
-                continue
-
-            # Any other non-200 is a real error — raise immediately
-            if resp.status_code != 200:
+        # ── 2. Fall back to OpenRouter if Gemini failed or not configured ─────
+        if text is None:
+            if not openrouter_key:
                 raise HTTPException(
-                    status_code=502,
-                    detail=f"OpenRouter API error {resp.status_code} on model {model}: {resp.text[:300]}",
+                    status_code=503,
+                    detail="Gemini unavailable and OPENROUTER_API_KEY not configured.",
                 )
+            logger.info("Falling back to OpenRouter for %s", req.user_name)
+            text = await _call_openrouter(prompt, openrouter_key, client)
 
-            # Success — store in cache then return
-            try:
-                result = resp.json()
-                text = result["choices"][0]["message"]["content"].strip()
-            except (KeyError, IndexError) as exc:
-                raise HTTPException(
-                    status_code=502,
-                    detail=f"Unexpected OpenRouter response shape from {model}: {exc}",
-                )
-
-            if skipped:
-                logger.info("Used model %s after skipping: %s", model, "; ".join(skipped))
-
-            _insight_cache[cache_key] = (time.time(), text)
-            logger.info("Cached insight for %s (key=%s)", req.user_name, cache_key[:8])
-            return InsightsResponse(insight=text)
-
-    # All models exhausted
-    raise HTTPException(
-        status_code=502,
-        detail=f"All free models rate-limited or unavailable. Tried: {'; '.join(skipped)}",
-    )
+    _insight_cache[cache_key] = (time.time(), text)
+    logger.info("Cached insight for %s (key=%s)", req.user_name, cache_key[:8])
+    return InsightsResponse(insight=text)
