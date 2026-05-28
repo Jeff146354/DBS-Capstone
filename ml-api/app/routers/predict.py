@@ -104,18 +104,29 @@ def predict_status(req: StatusRequest) -> StatusResponse:
 # POST /predict/insights  — OpenRouter Gen-AI
 # ─────────────────────────────────────────────────────────────────────────────
 
+# Free models tried in order. If a model returns 429 (upstream rate-limited)
+# or 404 (removed), we move to the next one. Any other error is raised immediately.
+# This list is the only place to update when models change.
+_FREE_MODELS = [
+    "meta-llama/llama-3.3-70b-instruct:free",
+    "deepseek/deepseek-v4-flash:free",
+    "google/gemma-4-26b-a4b-it:free",
+    "qwen/qwen3-next-80b-a3b-instruct:free",
+]
+
+
 @router.post("/insights", response_model=InsightsResponse)
 async def predict_insights(req: InsightsRequest) -> InsightsResponse:
     """
     Generate personalised financial advice using OpenRouter API.
     Requires OPENROUTER_API_KEY environment variable.
-    Uses meta-llama/llama-3.3-70b-instruct:free via OpenRouter (free tier).
+    Tries each model in _FREE_MODELS in order; skips on 429/404 (upstream limits).
     """
     api_key = os.environ.get("OPENROUTER_API_KEY", "")
     if not api_key:
         raise HTTPException(status_code=503, detail="OPENROUTER_API_KEY not configured.")
 
-    # Per-user rate limit
+    # Per-user rate limit — prevents the same user from hammering the endpoint
     user_key = req.user_name
     now = time.time()
     last = _insight_last_called.get(user_key, 0)
@@ -170,12 +181,6 @@ Apakah perlu waspada? Apakah tren membaik atau memburuk?]
 Pastikan nada: hangat, tidak menghakimi, dan memotivasi."""
 
     url = "https://openrouter.ai/api/v1/chat/completions"
-    payload = {
-        "model": "meta-llama/llama-3.3-70b-instruct:free",
-        "messages": [{"role": "user", "content": prompt}],
-        "max_tokens": 700,
-        "temperature": 0.4,
-    }
     headers = {
         "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json",
@@ -183,24 +188,55 @@ Pastikan nada: hangat, tidak menghakimi, dan memotivasi."""
         "X-Title": "Spendly AI",
     }
 
-    try:
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            resp = await client.post(url, json=payload, headers=headers)
-    except httpx.TimeoutException:
-        raise HTTPException(status_code=504, detail="OpenRouter API timeout.")
-    except Exception as exc:
-        raise HTTPException(status_code=502, detail=f"OpenRouter API request failed: {exc}")
+    skipped: list[str] = []
 
-    if resp.status_code != 200:
-        raise HTTPException(
-            status_code=502,
-            detail=f"OpenRouter API error {resp.status_code}: {resp.text[:300]}",
-        )
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        for model in _FREE_MODELS:
+            payload = {
+                "model": model,
+                "messages": [{"role": "user", "content": prompt}],
+                "max_tokens": 700,
+                "temperature": 0.4,
+            }
 
-    try:
-        result = resp.json()
-        text = result["choices"][0]["message"]["content"].strip()
-    except (KeyError, IndexError) as exc:
-        raise HTTPException(status_code=502, detail=f"Unexpected OpenRouter response shape: {exc}")
+            try:
+                resp = await client.post(url, json=payload, headers=headers)
+            except httpx.TimeoutException:
+                raise HTTPException(status_code=504, detail=f"OpenRouter timeout on model {model}.")
+            except Exception as exc:
+                raise HTTPException(status_code=502, detail=f"OpenRouter request failed: {exc}")
 
-    return InsightsResponse(insight=text)
+            # 429 or 404 from upstream → try next model
+            if resp.status_code in (429, 404):
+                reason = resp.json().get("error", {}).get("message", resp.text[:120])
+                logger.warning("Model %s skipped (%s): %s", model, resp.status_code, reason)
+                skipped.append(f"{model} [{resp.status_code}]: {reason}")
+                continue
+
+            # Any other non-200 is a real error — raise immediately
+            if resp.status_code != 200:
+                raise HTTPException(
+                    status_code=502,
+                    detail=f"OpenRouter API error {resp.status_code} on model {model}: {resp.text[:300]}",
+                )
+
+            # Success
+            try:
+                result = resp.json()
+                text = result["choices"][0]["message"]["content"].strip()
+            except (KeyError, IndexError) as exc:
+                raise HTTPException(
+                    status_code=502,
+                    detail=f"Unexpected OpenRouter response shape from {model}: {exc}",
+                )
+
+            if skipped:
+                logger.info("Used model %s after skipping: %s", model, "; ".join(skipped))
+
+            return InsightsResponse(insight=text)
+
+    # All models exhausted
+    raise HTTPException(
+        status_code=502,
+        detail=f"All free models rate-limited or unavailable. Tried: {'; '.join(skipped)}",
+    )
