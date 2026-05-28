@@ -24,7 +24,7 @@ export default function ProgressBar({ spent, limit, showLabel = true }: Progress
       {showLabel && (
         <div className="flex justify-between mt-2 text-xs text-text-secondary">
           <span>{Math.round(percentage)}% used</span>
-          <span>{Math.round(percentage)}% remaining</span>
+          <span>{Math.round(100 - percentage)}% remaining</span>
         </div>
       )}
     </div>

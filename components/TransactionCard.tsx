@@ -23,8 +23,13 @@ export default function TransactionCard({
   account,
   onDelete,
 }: TransactionCardProps) {
+  // Dates from API are YYYY-MM-DD with no time component.
+  // Parse as local date to avoid UTC-offset artifacts (e.g. showing 07:00 for midnight UTC).
+  const [year, month, day] = date.toISOString().split('T')[0].split('-').map(Number)
+  const localDate = new Date(year, month - 1, day)
+  const dateString = localDate.toLocaleDateString('id-ID', { day: 'numeric', month: 'short' })
+
   const isExpense = type === 'expense'
-  const timeString = date.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })
 
   return (
     <div className="card-solid p-4 flex items-center justify-between hover:bg-bg-tertiary transition-colors group">
@@ -32,7 +37,7 @@ export default function TransactionCard({
         <div className="text-2xl">{categoryEmoji}</div>
         <div className="flex-1 min-w-0">
           <p className="text-text-primary font-medium truncate">{merchant}</p>
-          <p className="text-text-secondary text-sm">{category} • {timeString}</p>
+          <p className="text-text-secondary text-sm">{category} • {dateString}</p>
         </div>
       </div>
       <div className="flex items-center gap-3">
