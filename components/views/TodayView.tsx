@@ -8,7 +8,6 @@ import ProgressBar from '@/components/ProgressBar'
 import AddTransactionModal from '@/components/AddTransactionModal'
 import type { UserSession } from '@/app/page'
 import type { TransactionFeatures } from '@/lib/api'
-
 import { API_BASE, ML_BASE } from '@/lib/config'
 
 interface APITransaction {
@@ -21,40 +20,30 @@ interface APITransaction {
   account: string
   payment_method: string
   note?: string
-  date: string // YYYY-MM-DD
+  date: string
 }
 
 interface MLStatus {
   status: 'AMAN' | 'HATI-HATI' | 'BOROS'
   confidence: number
   reason: string
+  // error shape from FastAPI
+  detail?: string
 }
 
 interface MLForecast {
   predicted_amount: number
   currency: string
   month: string
+  detail?: string
 }
 
 interface TodayViewProps {
   session: UserSession
 }
 
-// ─── Feature engineering helpers ────────────────────────────────────────────
+// ─── Feature engineering ────────────────────────────────────────────────────
 
-function getWeekOfMonth(dateStr: string): number {
-  const d = new Date(dateStr)
-  return Math.ceil(d.getDate() / 7)
-}
-
-function getDayOfMonth(dateStr: string): number {
-  return new Date(dateStr).getDate()
-}
-
-/**
- * Build the 12-feature snapshot for a given day from the full transaction list.
- * Uses the same feature definitions as the training notebook.
- */
 function buildFeatures(
   targetDate: string,
   allMonthTx: APITransaction[],
@@ -62,28 +51,17 @@ function buildFeatures(
   dailyBudget: number,
 ): TransactionFeatures {
   const expenses = allMonthTx.filter(t => t.type === 'expense')
-
-  // Cumulative expense for the target day
   const dayExpenses = expenses.filter(t => t.date === targetDate)
   const cumExpenseDaily = dayExpenses.reduce((s, t) => s + t.amount, 0)
-
-  // Cumulative expense for the month up to and including target date
-  const cumExpenseMonthly = expenses
-    .filter(t => t.date <= targetDate)
-    .reduce((s, t) => s + t.amount, 0)
-
+  const cumExpenseMonthly = expenses.filter(t => t.date <= targetDate).reduce((s, t) => s + t.amount, 0)
   const currentBudget = monthBudget - cumExpenseMonthly
   const spendingRatio = monthBudget > 0 ? cumExpenseMonthly / monthBudget : 0
-
-  // Transaction frequency on target day
   const trxFrequency = allMonthTx.filter(t => t.date === targetDate).length
 
-  // 7-day rolling average of daily expense ending on targetDate
   const rollingAvg7d = (() => {
-    const target = new Date(targetDate)
     let total = 0
     for (let i = 0; i < 7; i++) {
-      const d = new Date(target)
+      const d = new Date(targetDate)
       d.setDate(d.getDate() - i)
       const ds = d.toISOString().split('T')[0]
       total += expenses.filter(t => t.date === ds).reduce((s, t) => s + t.amount, 0)
@@ -91,24 +69,16 @@ function buildFeatures(
     return total / 7
   })()
 
-  // Expense acceleration: today's total minus yesterday's total
   const yesterday = (() => {
-    const d = new Date(targetDate)
-    d.setDate(d.getDate() - 1)
+    const d = new Date(targetDate); d.setDate(d.getDate() - 1)
     return d.toISOString().split('T')[0]
   })()
   const yesterdayTotal = expenses.filter(t => t.date === yesterday).reduce((s, t) => s + t.amount, 0)
-  const expenseAcceleration = cumExpenseDaily - yesterdayTotal
-
-  // Representative amount: average transaction amount on target day (or 0)
-  const amount = dayExpenses.length > 0
-    ? dayExpenses.reduce((s, t) => s + t.amount, 0) / dayExpenses.length
-    : 0
 
   return {
-    amount,
-    week_of_month: getWeekOfMonth(targetDate),
-    day_of_month: getDayOfMonth(targetDate),
+    amount: dayExpenses.length > 0 ? cumExpenseDaily / dayExpenses.length : 0,
+    week_of_month: Math.ceil(new Date(targetDate).getDate() / 7),
+    day_of_month: new Date(targetDate).getDate(),
     month_budget: monthBudget,
     daily_budget: dailyBudget,
     cum_expense_daily: cumExpenseDaily,
@@ -117,47 +87,56 @@ function buildFeatures(
     spending_ratio: spendingRatio,
     trx_frequency: trxFrequency,
     rolling_avg_7d: rollingAvg7d,
-    expense_acceleration: expenseAcceleration,
+    expense_acceleration: cumExpenseDaily - yesterdayTotal,
   }
 }
 
-/**
- * Build a 7-day sequence ending on targetDate for the LSTM model.
- */
 function buildSequence(
   targetDate: string,
   allMonthTx: APITransaction[],
   monthBudget: number,
   dailyBudget: number,
 ): TransactionFeatures[] {
-  const seq: TransactionFeatures[] = []
-  for (let i = 6; i >= 0; i--) {
+  return Array.from({ length: 7 }, (_, i) => {
     const d = new Date(targetDate)
-    d.setDate(d.getDate() - i)
-    const ds = d.toISOString().split('T')[0]
-    seq.push(buildFeatures(ds, allMonthTx, monthBudget, dailyBudget))
-  }
-  return seq
+    d.setDate(d.getDate() - (6 - i))
+    return buildFeatures(d.toISOString().split('T')[0], allMonthTx, monthBudget, dailyBudget)
+  })
 }
 
-// ─── Status label helpers ────────────────────────────────────────────────────
+// ─── Status styling ──────────────────────────────────────────────────────────
 
-const STATUS_LABEL: Record<string, string> = {
-  AMAN: 'Aman',
-  'HATI-HATI': 'Hati-hati',
-  BOROS: 'Boros',
-}
-
-const STATUS_COLOR: Record<string, string> = {
-  AMAN: 'text-success',
-  'HATI-HATI': 'text-warning',
-  BOROS: 'text-danger',
-}
-
+const STATUS_LABEL: Record<string, string> = { AMAN: 'Aman', 'HATI-HATI': 'Hati-hati', BOROS: 'Boros' }
+const STATUS_COLOR: Record<string, string> = { AMAN: 'text-success', 'HATI-HATI': 'text-warning', BOROS: 'text-danger' }
 const STATUS_BG: Record<string, string> = {
   AMAN: 'border-success/30 bg-success/5',
   'HATI-HATI': 'border-warning/30 bg-warning/5',
   BOROS: 'border-danger/30 bg-danger/5',
+}
+
+// ─── Simple markdown renderer ────────────────────────────────────────────────
+
+function renderMarkdown(text: string) {
+  return text.split('\n').map((line, i) => {
+    if (line.startsWith('## ')) return <p key={i} className="font-bold text-accent text-sm mt-3 mb-1">{line.slice(3)}</p>
+    if (/^\d+\.\s\*\*(.+?)\*\*:(.*)/.test(line)) {
+      const m = line.match(/^\d+\.\s\*\*(.+?)\*\*:(.*)/)!
+      return <p key={i} className="text-xs text-text-secondary ml-2">• <span className="font-semibold text-text-primary">{m[1]}:</span>{m[2]}</p>
+    }
+    if (line.trim() === '') return null
+    return <p key={i} className="text-xs text-text-secondary leading-relaxed">{line}</p>
+  })
+}
+
+// ─── Error box ───────────────────────────────────────────────────────────────
+
+function ErrorBox({ label, detail }: { label: string; detail: string }) {
+  return (
+    <div className="bg-danger/10 border border-danger/30 rounded-lg px-3 py-2">
+      <p className="text-xs text-danger font-mono">⚠ {label}</p>
+      <p className="text-xs text-danger/70 font-mono mt-1 break-all">{detail}</p>
+    </div>
+  )
 }
 
 // ─── Component ───────────────────────────────────────────────────────────────
@@ -166,83 +145,135 @@ export default function TodayView({ session }: TodayViewProps) {
   const [transactions, setTransactions] = useState<APITransaction[]>([])
   const [summary, setSummary] = useState({ total_income: 0, total_expenses: 0, balance: 0 })
   const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState('')
   const [showModal, setShowModal] = useState(false)
 
-  // ML state
   const [mlStatus, setMlStatus] = useState<MLStatus | null>(null)
   const [mlForecast, setMlForecast] = useState<MLForecast | null>(null)
+  const [mlInsight, setMlInsight] = useState<string | null>(null)
   const [mlLoading, setMlLoading] = useState(false)
-  const [mlError, setMlError] = useState(false)
+  const [mlErrors, setMlErrors] = useState<Record<string, string>>({})
 
   const today = new Date().toISOString().split('T')[0]
   const currentMonth = today.slice(0, 7)
-
-  // Daily budget derived from monthly income
   const dailyBudget = session.monthlyIncome > 0 ? Math.round(session.monthlyIncome / 30) : 200000
   const monthBudget = session.monthlyIncome
 
   const fetchData = useCallback(async () => {
     setLoading(true)
+    setLoadError('')
     try {
       const [txRes, sumRes] = await Promise.all([
         fetch(`${API_BASE}/transactions?user_id=${session.userId}&month=${currentMonth}`),
         fetch(`${API_BASE}/summary/${session.userId}`),
       ])
+      if (!txRes.ok) throw new Error(`Transactions API: ${txRes.status} ${txRes.statusText}`)
+      if (!sumRes.ok) throw new Error(`Summary API: ${sumRes.status} ${sumRes.statusText}`)
       const [txJson, sumJson] = await Promise.all([txRes.json(), sumRes.json()])
-      if (txJson.success) setTransactions(txJson.data)
-      if (sumJson.success) setSummary(sumJson.data)
-    } catch { }
-    finally { setLoading(false) }
+      if (!txJson.success) throw new Error(`Transactions: ${txJson.error}`)
+      if (!sumJson.success) throw new Error(`Summary: ${sumJson.error}`)
+      setTransactions(txJson.data)
+      setSummary(sumJson.data)
+    } catch (err) {
+      setLoadError(String(err))
+    } finally {
+      setLoading(false)
+    }
   }, [session.userId, currentMonth])
 
   useEffect(() => { fetchData() }, [fetchData])
 
-  // Call ML API once transactions are loaded
   useEffect(() => {
     if (loading || transactions.length === 0) return
 
     async function fetchML() {
       setMlLoading(true)
-      setMlError(false)
+      setMlErrors({})
+      const errors: Record<string, string> = {}
+
+      const features = buildFeatures(today, transactions, monthBudget, dailyBudget)
+      const sequence = buildSequence(today, transactions, monthBudget, dailyBudget)
+
+      // ── Status prediction ──
+      let statusData: MLStatus | null = null
       try {
-        const features = buildFeatures(today, transactions, monthBudget, dailyBudget)
-        const sequence = buildSequence(today, transactions, monthBudget, dailyBudget)
-
-        const [statusRes, forecastRes] = await Promise.all([
-          fetch(`${ML_BASE}/predict/status`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(features),
-          }),
-          fetch(`${ML_BASE}/predict/spending`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ sequence }),
-          }),
-        ])
-
-        const [statusData, forecastData] = await Promise.all([
-          statusRes.json(),
-          forecastRes.json(),
-        ])
-
-        if (statusData.status)           setMlStatus(statusData)
-        if (forecastData.predicted_amount) setMlForecast(forecastData)
-      } catch {
-        setMlError(true)
-      } finally {
-        setMlLoading(false)
+        const res = await fetch(`${ML_BASE}/predict/status`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(features),
+        })
+        const json = await res.json()
+        if (!res.ok) errors.status = `${res.status}: ${json.detail ?? JSON.stringify(json)}`
+        else statusData = json
+      } catch (err) {
+        errors.status = `Network error: ${err}`
       }
+      setMlStatus(statusData)
+
+      // ── Spending forecast ──
+      let forecastData: MLForecast | null = null
+      try {
+        const res = await fetch(`${ML_BASE}/predict/spending`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ sequence }),
+        })
+        const json = await res.json()
+        if (!res.ok) errors.forecast = `${res.status}: ${json.detail ?? JSON.stringify(json)}`
+        else forecastData = json
+      } catch (err) {
+        errors.forecast = `Network error: ${err}`
+      }
+      setMlForecast(forecastData)
+
+      // ── Gemini insights (only if status + forecast succeeded) ──
+      if (statusData && forecastData) {
+        try {
+          const predRatio = monthBudget > 0 ? forecastData.predicted_amount / monthBudget : 0
+          const sisaBudget = monthBudget - forecastData.predicted_amount
+
+          const insightPayload = {
+            user_name: session.userName,
+            month_budget: monthBudget,
+            cum_monthly: features.cum_expense_monthly,
+            current_budget_rem: features.current_budget,
+            spending_ratio_now: features.spending_ratio,
+            label: statusData.status,
+            confidence: statusData.confidence,
+            prob_aman: 0,
+            prob_hati_hati: 0,
+            prob_boros: 0,
+            pred_rupiah: forecastData.predicted_amount,
+            pred_ratio: predRatio,
+            sisa_budget: sisaBudget,
+          }
+          // Set probabilities based on status
+          if (statusData.status === 'AMAN') insightPayload.prob_aman = statusData.confidence
+          else if (statusData.status === 'HATI-HATI') insightPayload.prob_hati_hati = statusData.confidence
+          else insightPayload.prob_boros = statusData.confidence
+
+          const res = await fetch(`${ML_BASE}/predict/insights`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(insightPayload),
+          })
+          const json = await res.json()
+          if (!res.ok) errors.insights = `${res.status}: ${json.detail ?? JSON.stringify(json)}`
+          else setMlInsight(json.insight)
+        } catch (err) {
+          errors.insights = `Network error: ${err}`
+        }
+      }
+
+      setMlErrors(errors)
+      setMlLoading(false)
     }
 
     fetchML()
-  }, [loading, transactions, today, monthBudget, dailyBudget])
+  }, [loading, transactions, today, monthBudget, dailyBudget, session.userName])
 
   const todayTransactions = transactions.filter(t => t.date === today)
-  const todaySpending = todayTransactions
-    .filter(t => t.type === 'expense')
-    .reduce((s, t) => s + t.amount, 0)
-
+  const todaySpending = todayTransactions.filter(t => t.type === 'expense').reduce((s, t) => s + t.amount, 0)
   const status = getSpendingStatus(todaySpending, dailyBudget)
   const greeting = getGreeting()
 
@@ -258,6 +289,9 @@ export default function TodayView({ session }: TodayViewProps) {
             Selamat {greeting}, {session.userName} 👋
           </h1>
         </div>
+
+        {/* Data load error */}
+        {loadError && <ErrorBox label="Gagal memuat data" detail={loadError} />}
 
         {/* Daily Spending Card */}
         <div className="card-glass p-5 space-y-4">
@@ -276,9 +310,7 @@ export default function TodayView({ session }: TodayViewProps) {
         </div>
 
         {/* ── AI Insights Card ── */}
-        <div className={`card-glass p-4 border space-y-3 ${
-          mlStatus ? STATUS_BG[mlStatus.status] : 'border-accent/20'
-        }`}>
+        <div className={`card-glass p-4 border space-y-3 ${mlStatus ? STATUS_BG[mlStatus.status] : 'border-accent/20'}`}>
           <div className="flex items-center justify-between">
             <h3 className="font-semibold text-accent flex items-center gap-2">✨ AI Insights</h3>
             {mlStatus && (
@@ -288,55 +320,40 @@ export default function TodayView({ session }: TodayViewProps) {
             )}
           </div>
 
+          {/* Loading skeleton */}
           {mlLoading && (
             <div className="space-y-2 animate-pulse">
-              <div className="h-3 bg-accent/10 rounded w-3/4" />
-              <div className="h-3 bg-accent/10 rounded w-1/2" />
+              {[...Array(4)].map((_, i) => (
+                <div key={i} className={`h-3 bg-accent/10 rounded ${i % 2 === 0 ? 'w-3/4' : 'w-1/2'}`} />
+              ))}
             </div>
           )}
 
-          {!mlLoading && mlError && (
-            <p className="text-xs text-text-secondary">
-              ML API tidak tersedia. Pastikan uvicorn berjalan di port 8000.
-            </p>
-          )}
+          {/* ML errors */}
+          {!mlLoading && Object.entries(mlErrors).map(([key, msg]) => (
+            <ErrorBox key={key} label={`ML ${key} error`} detail={msg} />
+          ))}
 
-          {!mlLoading && !mlError && mlStatus && (
-            <div className="space-y-2">
-              {/* Status reason */}
-              <p className="text-sm text-text-secondary">
-                💡 {mlStatus.reason}
-              </p>
-
-              {/* Spending forecast */}
-              {mlForecast && (
-                <div className="pt-2 border-t border-accent/10 flex justify-between items-center">
-                  <span className="text-xs text-text-secondary">Prediksi pengeluaran bulan depan:</span>
-                  <span className="font-mono font-semibold text-accent text-sm">
-                    {formatCurrency(mlForecast.predicted_amount)}
-                  </span>
-                </div>
-              )}
-
-              {/* Monthly summary context */}
-              <div className="pt-1 flex justify-between items-center">
-                <span className="text-xs text-text-secondary">Pengeluaran bulan ini:</span>
-                <span className="font-mono text-xs font-semibold text-danger">
-                  {formatCurrency(summary.total_expenses)}
-                  {monthBudget > 0 && (
-                    <span className="text-text-secondary font-normal">
-                      {' '}/ {formatCurrency(monthBudget)}
-                    </span>
-                  )}
-                </span>
-              </div>
+          {/* Gemini insight markdown */}
+          {!mlLoading && mlInsight && (
+            <div className="space-y-1 pt-1">
+              {renderMarkdown(mlInsight)}
             </div>
           )}
 
-          {!mlLoading && !mlError && !mlStatus && transactions.length === 0 && (
-            <p className="text-xs text-text-secondary">
-              Tambahkan transaksi untuk mendapatkan analisis AI.
-            </p>
+          {/* Forecast line (shown even without Gemini) */}
+          {!mlLoading && mlForecast && !mlInsight && (
+            <div className="flex justify-between items-center pt-1">
+              <span className="text-xs text-text-secondary">Prediksi pengeluaran bulan depan:</span>
+              <span className="font-mono font-semibold text-accent text-sm">
+                {formatCurrency(mlForecast.predicted_amount)}
+              </span>
+            </div>
+          )}
+
+          {/* No transactions yet */}
+          {!mlLoading && transactions.length === 0 && Object.keys(mlErrors).length === 0 && (
+            <p className="text-xs text-text-secondary">Tambahkan transaksi untuk mendapatkan analisis AI.</p>
           )}
         </div>
 
@@ -386,10 +403,7 @@ export default function TodayView({ session }: TodayViewProps) {
           ) : (
             <div className="card-solid p-8 text-center">
               <p className="text-text-secondary">Tidak ada transaksi hari ini</p>
-              <button
-                onClick={() => setShowModal(true)}
-                className="mt-3 text-accent text-sm hover:underline"
-              >
+              <button onClick={() => setShowModal(true)} className="mt-3 text-accent text-sm hover:underline">
                 + Tambah transaksi pertama
               </button>
             </div>

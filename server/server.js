@@ -25,9 +25,11 @@ async function runMigration() {
   let conn
   try {
     conn = await mysql.createConnection(config)
-    const schema = fs.readFileSync(path.join(__dirname, 'db', 'schema.sql'), 'utf8')
-    const seed   = fs.readFileSync(path.join(__dirname, 'db', 'seed.sql'),   'utf8')
+    const schema   = fs.readFileSync(path.join(__dirname, 'db', 'schema.sql'),           'utf8')
+    const pwMigr   = fs.readFileSync(path.join(__dirname, 'db', 'migrate_password.sql'), 'utf8')
+    const seed     = fs.readFileSync(path.join(__dirname, 'db', 'seed.sql'),             'utf8')
     await conn.query(schema)
+    await conn.query(pwMigr)
     await conn.query(seed)
     console.log('✅ Migration complete.')
   } catch (err) {

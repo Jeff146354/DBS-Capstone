@@ -67,3 +67,27 @@ class SpendingResponse(BaseModel):
     predicted_amount: int = Field(..., gt=0, description="Predicted next-month spending in IDR")
     currency: str = Field(default="IDR")
     month: str = Field(..., description="Target month in YYYY-MM format")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Gemini AI Insights
+# ─────────────────────────────────────────────────────────────────────────────
+
+class InsightsRequest(BaseModel):
+    user_name: str
+    month_budget: float = Field(..., ge=0)
+    cum_monthly: float = Field(..., ge=0)
+    current_budget_rem: float
+    spending_ratio_now: float
+    label: str                    # AMAN / HATI-HATI / BOROS
+    confidence: float = Field(..., ge=0.0, le=1.0)
+    prob_aman: float = Field(..., ge=0.0, le=1.0)
+    prob_hati_hati: float = Field(..., ge=0.0, le=1.0)
+    prob_boros: float = Field(..., ge=0.0, le=1.0)
+    pred_rupiah: float = Field(..., ge=0)
+    pred_ratio: float
+    sisa_budget: float
+
+
+class InsightsResponse(BaseModel):
+    insight: str   # markdown text from Gemini
