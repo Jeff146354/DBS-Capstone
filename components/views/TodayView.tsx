@@ -153,7 +153,8 @@ export default function TodayView({ session }: TodayViewProps) {
   const [mlInsight, setMlInsight] = useState<string | null>(null)
   const [mlLoading, setMlLoading] = useState(false)
   const [mlErrors, setMlErrors] = useState<Record<string, string>>({})
-  const [mlFetched, setMlFetched] = useState(false) // prevent re-fetching on every render
+  const [mlFetched, setMlFetched] = useState(false)
+  const [mlRetryCount, setMlRetryCount] = useState(0)
 
   const today = new Date().toISOString().split('T')[0]
   const currentMonth = today.slice(0, 7)
@@ -272,7 +273,7 @@ export default function TodayView({ session }: TodayViewProps) {
     }
 
     fetchML()
-  }, [loading, transactions, today, monthBudget, dailyBudget, session.userName])
+  }, [loading, transactions, today, monthBudget, dailyBudget, session.userName, mlFetched, mlRetryCount])
 
   const todayTransactions = transactions.filter(t => t.date === today)
   const todaySpending = todayTransactions.filter(t => t.type === 'expense').reduce((s, t) => s + t.amount, 0)
@@ -337,8 +338,15 @@ export default function TodayView({ session }: TodayViewProps) {
           ))}
           {!mlLoading && Object.keys(mlErrors).length > 0 && (
             <button
-              onClick={() => { setMlFetched(false); setMlErrors({}) }}
-              className="text-xs text-accent hover:underline"
+              onClick={() => {
+                setMlFetched(false)
+                setMlErrors({})
+                setMlStatus(null)
+                setMlForecast(null)
+                setMlInsight(null)
+                setMlRetryCount(c => c + 1)
+              }}
+              className="text-xs text-accent hover:underline mt-1"
             >
               ↻ Coba lagi
             </button>
