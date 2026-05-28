@@ -151,7 +151,7 @@ Apakah perlu waspada? Apakah tren membaik atau memburuk?]
 
 Pastikan nada: hangat, tidak menghakimi, dan memotivasi."""
 
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={api_key}"
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key={api_key}"
     payload = {
         "contents": [{"parts": [{"text": prompt}]}],
         "generationConfig": {
