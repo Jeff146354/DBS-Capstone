@@ -41,7 +41,23 @@ export default function TransactionsView({ session }: TransactionsViewProps) {
       if (json.success) setTransactions(json.data)
     } catch { }
     finally { setLoading(false) }
-  }, [selectedMonth])
+  }, [selectedMonth, session.userId])
+
+  useEffect(() => { fetchTransactions() }, [fetchTransactions])
+
+  async function handleDelete(id: string) {
+    try {
+      const res = await fetch(`${API_BASE}/transactions/${id}`, { method: 'DELETE' })
+      if (!res.ok) {
+        const json = await res.json()
+        alert(`Gagal menghapus: ${json.error ?? res.statusText}`)
+        return
+      }
+      setTransactions(prev => prev.filter(t => t.id !== id))
+    } catch (err) {
+      alert(`Gagal menghapus: ${err}`)
+    }
+  }
 
   useEffect(() => { fetchTransactions() }, [fetchTransactions])
 
@@ -119,6 +135,7 @@ export default function TransactionsView({ session }: TransactionsViewProps) {
             {filtered.map(tx => (
               <TransactionCard
                 key={tx.id}
+                id={tx.id}
                 date={new Date(tx.date)}
                 category={tx.category}
                 categoryEmoji={tx.category_icon}
@@ -126,6 +143,7 @@ export default function TransactionsView({ session }: TransactionsViewProps) {
                 amount={tx.amount}
                 type={tx.type}
                 account={tx.account}
+                onDelete={handleDelete}
               />
             ))}
           </div>

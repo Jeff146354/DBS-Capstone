@@ -2,6 +2,7 @@
 Prediction router for the Spendly ML API.
 No fallback logic — errors are raised explicitly for easy debugging.
 """
+import hashlib
 import logging
 import os
 import time
@@ -25,6 +26,27 @@ router = APIRouter(tags=["predictions"])
 # ── Per-user rate limit: max 1 insight request per 60 seconds ────────────────
 _insight_last_called: dict[str, float] = {}
 INSIGHT_COOLDOWN_SECONDS = 60
+
+# ── Per-user insight cache ────────────────────────────────────────────────────
+# Stores the last successful LLM response keyed by (user + financial fingerprint).
+# When all models are rate-limited, serves the cached real AI output instead of
+# erroring. Cache expires after 6 hours or when financial state changes.
+_insight_cache: dict[str, tuple[float, str]] = {}  # key -> (timestamp, insight_text)
+INSIGHT_CACHE_TTL_SECONDS = 6 * 3600  # 6 hours
+
+
+def _insight_cache_key(req: InsightsRequest) -> str:
+    """Fingerprint the request by user + financial state (rounded to reduce
+    cache misses from tiny floating-point differences between page loads)."""
+    fingerprint = (
+        f"{req.user_name}"
+        f"|budget={round(req.month_budget / 10000) * 10000}"    # nearest 10k IDR
+        f"|cum={round(req.cum_monthly / 10000) * 10000}"
+        f"|ratio={round(req.spending_ratio_now * 20) / 20}"     # nearest 5%
+        f"|label={req.label}"
+        f"|pred={round(req.pred_rupiah / 10000) * 10000}"
+    )
+    return hashlib.md5(fingerprint.encode()).hexdigest()
 
 
 def _get_models():
@@ -121,14 +143,29 @@ async def predict_insights(req: InsightsRequest) -> InsightsResponse:
     Generate personalised financial advice using OpenRouter API.
     Requires OPENROUTER_API_KEY environment variable.
     Tries each model in _FREE_MODELS in order; skips on 429/404 (upstream limits).
+    Caches the last successful response per user+financial-state for 6 hours,
+    so rate-limited retries serve real cached AI output instead of erroring.
     """
     api_key = os.environ.get("OPENROUTER_API_KEY", "")
     if not api_key:
         raise HTTPException(status_code=503, detail="OPENROUTER_API_KEY not configured.")
 
-    # Per-user rate limit — prevents the same user from hammering the endpoint
-    user_key = req.user_name
+    cache_key = _insight_cache_key(req)
     now = time.time()
+
+    # ── Serve from cache if still fresh ──────────────────────────────────────
+    cached = _insight_cache.get(cache_key)
+    if cached:
+        cached_at, cached_text = cached
+        age = now - cached_at
+        if age < INSIGHT_CACHE_TTL_SECONDS:
+            logger.info("Serving cached insight for %s (age %.0fs)", req.user_name, age)
+            return InsightsResponse(insight=cached_text)
+        else:
+            del _insight_cache[cache_key]  # expired, remove it
+
+    # ── Per-user rate limit — prevents hammering when cache is cold ──────────
+    user_key = req.user_name
     last = _insight_last_called.get(user_key, 0)
     wait = INSIGHT_COOLDOWN_SECONDS - (now - last)
     if wait > 0:
@@ -220,7 +257,7 @@ Pastikan nada: hangat, tidak menghakimi, dan memotivasi."""
                     detail=f"OpenRouter API error {resp.status_code} on model {model}: {resp.text[:300]}",
                 )
 
-            # Success
+            # Success — store in cache then return
             try:
                 result = resp.json()
                 text = result["choices"][0]["message"]["content"].strip()
@@ -233,6 +270,8 @@ Pastikan nada: hangat, tidak menghakimi, dan memotivasi."""
             if skipped:
                 logger.info("Used model %s after skipping: %s", model, "; ".join(skipped))
 
+            _insight_cache[cache_key] = (time.time(), text)
+            logger.info("Cached insight for %s (key=%s)", req.user_name, cache_key[:8])
             return InsightsResponse(insight=text)
 
     # All models exhausted
