@@ -109,9 +109,9 @@ function buildSequence(
 const STATUS_LABEL: Record<string, string> = { AMAN: 'Aman', 'HATI-HATI': 'Hati-hati', BOROS: 'Boros' }
 const STATUS_COLOR: Record<string, string> = { AMAN: 'text-success', 'HATI-HATI': 'text-warning', BOROS: 'text-danger' }
 const STATUS_BG: Record<string, string> = {
-  AMAN: 'border-success/30 bg-success/5',
-  'HATI-HATI': 'border-warning/30 bg-warning/5',
-  BOROS: 'border-danger/30 bg-danger/5',
+  AMAN: 'insight-aman',
+  'HATI-HATI': 'insight-hati-hati',
+  BOROS: 'insight-boros',
 }
 
 // ─── Simple markdown renderer ────────────────────────────────────────────────
@@ -153,6 +153,7 @@ export default function TodayView({ session }: TodayViewProps) {
   const [mlInsight, setMlInsight] = useState<string | null>(null)
   const [mlLoading, setMlLoading] = useState(false)
   const [mlErrors, setMlErrors] = useState<Record<string, string>>({})
+  const [mlFetched, setMlFetched] = useState(false) // prevent re-fetching on every render
 
   const today = new Date().toISOString().split('T')[0]
   const currentMonth = today.slice(0, 7)
@@ -184,7 +185,7 @@ export default function TodayView({ session }: TodayViewProps) {
   useEffect(() => { fetchData() }, [fetchData])
 
   useEffect(() => {
-    if (loading || transactions.length === 0) return
+    if (loading || transactions.length === 0 || mlFetched) return
 
     async function fetchML() {
       setMlLoading(true)
@@ -267,6 +268,7 @@ export default function TodayView({ session }: TodayViewProps) {
 
       setMlErrors(errors)
       setMlLoading(false)
+      setMlFetched(true)
     }
 
     fetchML()
@@ -333,6 +335,14 @@ export default function TodayView({ session }: TodayViewProps) {
           {!mlLoading && Object.entries(mlErrors).map(([key, msg]) => (
             <ErrorBox key={key} label={`ML ${key} error`} detail={msg} />
           ))}
+          {!mlLoading && Object.keys(mlErrors).length > 0 && (
+            <button
+              onClick={() => { setMlFetched(false); setMlErrors({}) }}
+              className="text-xs text-accent hover:underline"
+            >
+              ↻ Coba lagi
+            </button>
+          )}
 
           {/* Gemini insight markdown */}
           {!mlLoading && mlInsight && (
