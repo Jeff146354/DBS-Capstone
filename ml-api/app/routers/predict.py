@@ -96,18 +96,19 @@ def predict_status(req: StatusRequest) -> StatusResponse:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# POST /predict/insights  — Gemini Gen-AI
+# POST /predict/insights  — OpenRouter Gen-AI
 # ─────────────────────────────────────────────────────────────────────────────
 
 @router.post("/insights", response_model=InsightsResponse)
 async def predict_insights(req: InsightsRequest) -> InsightsResponse:
     """
-    Generate personalised financial advice using Gemini API.
-    Requires GEMINI_API_KEY environment variable.
+    Generate personalised financial advice using OpenRouter API.
+    Requires OPENROUTER_API_KEY environment variable.
+    Uses meta-llama/llama-3.3-70b-instruct:free (free tier, no billing needed).
     """
-    api_key = os.environ.get("GEMINI_API_KEY", "")
+    api_key = os.environ.get("OPENROUTER_API_KEY", "")
     if not api_key:
-        raise HTTPException(status_code=503, detail="GEMINI_API_KEY not configured.")
+        raise HTTPException(status_code=503, detail="OPENROUTER_API_KEY not configured.")
 
     prompt = f"""Kamu adalah Spendly AI, asisten keuangan personal yang cerdas, empatik, dan to-the-point.
 Kamu berbicara dalam Bahasa Indonesia yang ramah namun profesional.
@@ -151,34 +152,38 @@ Apakah perlu waspada? Apakah tren membaik atau memburuk?]
 
 Pastikan nada: hangat, tidak menghakimi, dan memotivasi."""
 
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-lite:generateContent?key={api_key}"
+    url = "https://openrouter.ai/api/v1/chat/completions"
     payload = {
-        "contents": [{"parts": [{"text": prompt}]}],
-        "generationConfig": {
-            "maxOutputTokens": 600,
-            "temperature": 0.4,
-            "topP": 0.95,
-        },
+        "model": "meta-llama/llama-3.3-70b-instruct:free",
+        "messages": [{"role": "user", "content": prompt}],
+        "max_tokens": 700,
+        "temperature": 0.4,
+    }
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+        "HTTP-Referer": "https://dbs-capstone-deploy.vercel.app",
+        "X-Title": "Spendly AI",
     }
 
     try:
-        async with httpx.AsyncClient(timeout=20.0) as client:
-            resp = await client.post(url, json=payload)
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            resp = await client.post(url, json=payload, headers=headers)
     except httpx.TimeoutException:
-        raise HTTPException(status_code=504, detail="Gemini API timeout.")
+        raise HTTPException(status_code=504, detail="OpenRouter API timeout.")
     except Exception as exc:
-        raise HTTPException(status_code=502, detail=f"Gemini API request failed: {exc}")
+        raise HTTPException(status_code=502, detail=f"OpenRouter API request failed: {exc}")
 
     if resp.status_code != 200:
         raise HTTPException(
             status_code=502,
-            detail=f"Gemini API error {resp.status_code}: {resp.text[:200]}",
+            detail=f"OpenRouter API error {resp.status_code}: {resp.text[:300]}",
         )
 
     try:
         result = resp.json()
-        text = result["candidates"][0]["content"]["parts"][0]["text"].strip()
+        text = result["choices"][0]["message"]["content"].strip()
     except (KeyError, IndexError) as exc:
-        raise HTTPException(status_code=502, detail=f"Unexpected Gemini response shape: {exc}")
+        raise HTTPException(status_code=502, detail=f"Unexpected OpenRouter response shape: {exc}")
 
     return InsightsResponse(insight=text)
