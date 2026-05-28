@@ -23,7 +23,6 @@ export default function LoginScreen({ onLogin }: LoginScreenProps) {
   const [regEmail, setRegEmail] = useState('')
   const [regPassword, setRegPassword] = useState('')
   const [regConfirm, setRegConfirm] = useState('')
-  const [regIncome, setRegIncome] = useState('')
   const [regError, setRegError] = useState('')
   const [regLoading, setRegLoading] = useState(false)
   const [showRegPw, setShowRegPw] = useState(false)
@@ -72,7 +71,7 @@ export default function LoginScreen({ onLogin }: LoginScreenProps) {
           name: regName.trim(),
           email: regEmail.trim(),
           password: regPassword,
-          monthly_income: Number(regIncome) || 0,
+          monthly_income: 0,
         }),
       })
       const json = await res.json()
@@ -236,17 +235,6 @@ export default function LoginScreen({ onLogin }: LoginScreenProps) {
                 className={inputClass}
                 required
                 autoComplete="new-password"
-              />
-            </div>
-            <div className="space-y-1">
-              <label className="text-xs text-text-secondary font-medium">Pendapatan Bulanan (Rp)</label>
-              <input
-                type="number"
-                value={regIncome}
-                onChange={e => setRegIncome(e.target.value)}
-                placeholder="5000000"
-                className={inputClass}
-                min="0"
               />
             </div>
 

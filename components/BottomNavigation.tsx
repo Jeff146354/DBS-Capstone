@@ -1,15 +1,16 @@
 interface BottomNavigationProps {
   activeView: string
   onViewChange: (view: any) => void
+  onLogout: () => void
 }
 
-export default function BottomNavigation({ activeView, onViewChange }: BottomNavigationProps) {
+export default function BottomNavigation({ activeView, onViewChange, onLogout }: BottomNavigationProps) {
   const navItems = [
     { id: 'today', label: 'Today', icon: '📅' },
     { id: 'balance', label: 'Balance', icon: '💰' },
     { id: 'budget', label: 'Budget', icon: '📊' },
     { id: 'reports', label: 'Reports', icon: '📈' },
-    { id: 'transactions', label: 'Transactions', icon: '💳' }
+    { id: 'transactions', label: 'Transactions', icon: '💳' },
   ]
 
   return (
@@ -29,6 +30,14 @@ export default function BottomNavigation({ activeView, onViewChange }: BottomNav
             <span className="text-xs font-medium">{item.label}</span>
           </button>
         ))}
+        <button
+          onClick={onLogout}
+          className="flex flex-col items-center justify-center w-full h-full gap-1 transition-colors text-text-secondary hover:text-danger"
+          aria-label="Keluar"
+        >
+          <span className="text-xl">🚪</span>
+          <span className="text-xs font-medium">Keluar</span>
+        </button>
       </div>
     </nav>
   )

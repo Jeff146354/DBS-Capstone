@@ -41,7 +41,11 @@ export default function Home() {
       <div className="flex-1 overflow-y-auto pb-20">
         {renderView()}
       </div>
-      <BottomNavigation activeView={activeView} onViewChange={setActiveView} />
+      <BottomNavigation
+        activeView={activeView}
+        onViewChange={setActiveView}
+        onLogout={() => setSession(null)}
+      />
     </div>
   )
 }
