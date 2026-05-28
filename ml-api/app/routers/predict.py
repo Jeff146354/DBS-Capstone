@@ -109,7 +109,7 @@ async def predict_insights(req: InsightsRequest) -> InsightsResponse:
     """
     Generate personalised financial advice using OpenRouter API.
     Requires OPENROUTER_API_KEY environment variable.
-    Uses meta-llama/llama-3.3-70b-instruct:free (free tier, no billing needed).
+    Uses meta-llama/llama-3.3-70b-instruct:free via OpenRouter (free tier).
     """
     api_key = os.environ.get("OPENROUTER_API_KEY", "")
     if not api_key:
@@ -171,7 +171,7 @@ Pastikan nada: hangat, tidak menghakimi, dan memotivasi."""
 
     url = "https://openrouter.ai/api/v1/chat/completions"
     payload = {
-        "model": "google/gemma-3-12b-it:free",
+        "model": "meta-llama/llama-3.3-70b-instruct:free",
         "messages": [{"role": "user", "content": prompt}],
         "max_tokens": 700,
         "temperature": 0.4,
