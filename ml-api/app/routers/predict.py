@@ -4,6 +4,7 @@ No fallback logic — errors are raised explicitly for easy debugging.
 """
 import logging
 import os
+import time
 
 import httpx
 from datetime import date, timedelta
@@ -20,6 +21,10 @@ from ..schemas.prediction import (
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["predictions"])
+
+# ── Per-user rate limit: max 1 insight request per 60 seconds ────────────────
+_insight_last_called: dict[str, float] = {}
+INSIGHT_COOLDOWN_SECONDS = 60
 
 
 def _get_models():
@@ -110,6 +115,18 @@ async def predict_insights(req: InsightsRequest) -> InsightsResponse:
     if not api_key:
         raise HTTPException(status_code=503, detail="OPENROUTER_API_KEY not configured.")
 
+    # Per-user rate limit
+    user_key = req.user_name
+    now = time.time()
+    last = _insight_last_called.get(user_key, 0)
+    wait = INSIGHT_COOLDOWN_SECONDS - (now - last)
+    if wait > 0:
+        raise HTTPException(
+            status_code=429,
+            detail=f"Terlalu banyak permintaan. Coba lagi dalam {int(wait)} detik."
+        )
+    _insight_last_called[user_key] = now
+
     prompt = f"""Kamu adalah Spendly AI, asisten keuangan personal yang cerdas, empatik, dan to-the-point.
 Kamu berbicara dalam Bahasa Indonesia yang ramah namun profesional.
 Kamu TIDAK boleh memberikan saran investasi saham atau aset berisiko tinggi.
@@ -154,7 +171,7 @@ Pastikan nada: hangat, tidak menghakimi, dan memotivasi."""
 
     url = "https://openrouter.ai/api/v1/chat/completions"
     payload = {
-        "model": "meta-llama/llama-3.3-70b-instruct:free",
+        "model": "mistralai/mistral-7b-instruct:free",
         "messages": [{"role": "user", "content": prompt}],
         "max_tokens": 700,
         "temperature": 0.4,

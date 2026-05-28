@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { formatCurrency, getGreeting, getSpendingStatus } from '@/lib/mockData'
 import TransactionCard from '@/components/TransactionCard'
 import StatusBadge from '@/components/StatusBadge'
@@ -153,8 +153,11 @@ export default function TodayView({ session }: TodayViewProps) {
   const [mlInsight, setMlInsight] = useState<string | null>(null)
   const [mlLoading, setMlLoading] = useState(false)
   const [mlErrors, setMlErrors] = useState<Record<string, string>>({})
-  const [mlFetched, setMlFetched] = useState(false)
   const [mlRetryCount, setMlRetryCount] = useState(0)
+
+  // Use a ref to track whether ML has been fetched — avoids stale closure issues
+  // with transactions array reference changing on every fetchData call
+  const mlFetchedRef = useRef(false)
 
   const today = new Date().toISOString().split('T')[0]
   const currentMonth = today.slice(0, 7)
@@ -186,7 +189,11 @@ export default function TodayView({ session }: TodayViewProps) {
   useEffect(() => { fetchData() }, [fetchData])
 
   useEffect(() => {
-    if (loading || transactions.length === 0 || mlFetched) return
+    // Only run when loading finishes and we have data
+    if (loading || transactions.length === 0) return
+    // Guard against re-runs — ref doesn't cause re-renders
+    if (mlFetchedRef.current) return
+    mlFetchedRef.current = true
 
     async function fetchML() {
       setMlLoading(true)
@@ -249,7 +256,6 @@ export default function TodayView({ session }: TodayViewProps) {
             pred_ratio: predRatio,
             sisa_budget: sisaBudget,
           }
-          // Set probabilities based on status
           if (statusData.status === 'AMAN') insightPayload.prob_aman = statusData.confidence
           else if (statusData.status === 'HATI-HATI') insightPayload.prob_hati_hati = statusData.confidence
           else insightPayload.prob_boros = statusData.confidence
@@ -269,11 +275,10 @@ export default function TodayView({ session }: TodayViewProps) {
 
       setMlErrors(errors)
       setMlLoading(false)
-      setMlFetched(true)
     }
 
     fetchML()
-  }, [loading, transactions, today, monthBudget, dailyBudget, session.userName, mlFetched, mlRetryCount])
+  }, [loading, transactions.length, today, monthBudget, dailyBudget, session.userName, mlRetryCount])
 
   const todayTransactions = transactions.filter(t => t.date === today)
   const todaySpending = todayTransactions.filter(t => t.type === 'expense').reduce((s, t) => s + t.amount, 0)
@@ -339,7 +344,7 @@ export default function TodayView({ session }: TodayViewProps) {
           {!mlLoading && Object.keys(mlErrors).length > 0 && (
             <button
               onClick={() => {
-                setMlFetched(false)
+                mlFetchedRef.current = false
                 setMlErrors({})
                 setMlStatus(null)
                 setMlForecast(null)
