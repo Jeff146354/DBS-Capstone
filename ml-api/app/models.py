@@ -1,13 +1,16 @@
 """
 Model loader for Spendly ML API.
 
-Both models share the same 12 feature columns (in this exact order):
+Both models share the same 16 feature columns (in this exact order):
     ['amount', 'week_of_month', 'day_of_month', 'month_budget', 'daily_budget',
      'cum_expense_daily', 'cum_expense_monthly', 'current_budget', 'spending_ratio',
-     'trx_frequency', 'rolling_avg_7d', 'expense_acceleration']
+     'trx_frequency', 'rolling_avg_7d', 'expense_acceleration',
+     'avg_daily_expense', 'total_trx_month', 'max_single_trx', 'std_daily_expense']
 
-Classifier  — input: (batch, 12)    → output: (batch, 3) softmax [aman, hati_hati, boros]
-LSTM        — input: (batch, 7, 12) → output: (batch, 1) next_month_expense_norm (StandardScaler)
+Classifier  — input: (batch, 16)     → output: (batch, 3) softmax [aman, hati_hati, boros]
+LSTM        — input: (batch, 14, 16) → output: (batch, 1) log1p(next_month_expense / month_budget)
+
+Denormalization: pred_ratio = expm1(pred_log); pred_rupiah = pred_ratio * month_budget
 
 Label map: {0: 'AMAN', 1: 'HATI-HATI', 2: 'BOROS'}
 """
@@ -27,9 +30,10 @@ _SCALER_LSTM_PATH = _MODELS_DIR / "scaler_lstm.pkl"
 _SCALER_CLF_PATH = _MODELS_DIR / "scaler_classification.pkl"
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Feature columns — MUST match training order exactly
+# Feature columns — MUST match training order exactly (16 features)
 # ─────────────────────────────────────────────────────────────────────────────
 FEATURE_COLS = [
+    # Original 12 features
     "amount",
     "week_of_month",
     "day_of_month",
@@ -42,7 +46,14 @@ FEATURE_COLS = [
     "trx_frequency",
     "rolling_avg_7d",
     "expense_acceleration",
+    # 4 new monthly aggregate features
+    "avg_daily_expense",
+    "total_trx_month",
+    "max_single_trx",
+    "std_daily_expense",
 ]
+
+LSTM_WINDOW = 14  # sliding window size (changed from 7 in v2)
 
 # Label map matching training: {0: aman, 1: hati_hati, 2: boros}
 LABEL_MAP = {0: "AMAN", 1: "HATI-HATI", 2: "BOROS"}
@@ -163,37 +174,40 @@ def predict_spending(sequence: list[dict]) -> float:
     Predict next month's expense using the LSTM model.
 
     Args:
-        sequence: List of exactly 7 dicts, each containing all FEATURE_COLS keys.
-                  Represents the 7 most recent transactions (oldest → newest).
+        sequence: List of exactly 14 dicts, each containing all FEATURE_COLS keys.
+                  Represents the 14 most recent days (oldest → newest).
 
     Returns:
         Predicted next-month expense in IDR (denormalized).
-        The model outputs next_month_expense_norm = next_month_expense / month_budget,
-        so we multiply back by the last window's month_budget.
+        The model outputs log1p(next_month_expense / month_budget),
+        so we apply expm1 then multiply by the last window's month_budget.
     """
-    if len(sequence) != 7:
-        raise ValueError(f"LSTM requires exactly 7 timesteps, got {len(sequence)}")
+    if len(sequence) != LSTM_WINDOW:
+        raise ValueError(f"LSTM requires exactly {LSTM_WINDOW} timesteps, got {len(sequence)}")
 
     model = get_lstm_model()
     scaler = get_scaler_lstm()
 
-    # Build (7, 12) feature matrix
+    # Build (14, 16) feature matrix
     X = np.array(
         [[row[col] for col in FEATURE_COLS] for row in sequence],
         dtype=np.float32,
-    )  # shape: (7, 12)
+    )  # shape: (14, 16)
 
-    # Scale: fit was done on 2D (n_samples, 12), so reshape → scale → reshape back
+    # Scale: fit was done on 2D (n_samples, 16), so reshape → scale → reshape back
     X_2d = X.reshape(-1, len(FEATURE_COLS))
     X_scaled_2d = scaler.transform(X_2d)
-    X_scaled = X_scaled_2d.reshape(1, 7, len(FEATURE_COLS))  # (1, 7, 12)
+    X_scaled = X_scaled_2d.reshape(1, LSTM_WINDOW, len(FEATURE_COLS))  # (1, 14, 16)
 
-    # Predict — output is next_month_expense_norm
-    norm_pred = float(model.predict(X_scaled, verbose=0)[0][0])
+    # Predict — output is log1p(next_month_expense / month_budget)
+    pred_log = float(model.predict(X_scaled, verbose=0)[0][0])
 
-    # Denormalize: norm = next_month_expense / month_budget
+    # Denormalize: expm1 reverses log1p, then multiply by budget
+    pred_ratio = float(np.expm1(pred_log))
+    pred_ratio = max(pred_ratio, 0.0)
+
     month_budget = sequence[-1]["month_budget"]
-    predicted_amount = norm_pred * month_budget
+    predicted_amount = pred_ratio * month_budget
 
     return max(1.0, predicted_amount)
 
@@ -212,11 +226,11 @@ def predict_status(features: dict) -> tuple[str, float]:
     model = get_classifier_model()
     scaler = get_scaler_clf()
 
-    # Build (1, 12) feature array in the correct column order
+    # Build (1, 16) feature array in the correct column order
     X = np.array(
         [[features[col] for col in FEATURE_COLS]],
         dtype=np.float32,
-    )  # shape: (1, 12)
+    )  # shape: (1, 16)
 
     X_scaled = scaler.transform(X)
 

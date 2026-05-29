@@ -43,8 +43,9 @@ interface APIPredictionStatus {
   reason: string
 }
 
-/** The 12 engineered features for a single transaction snapshot. */
+/** The 16 engineered features for a single transaction snapshot (v2 model). */
 export interface TransactionFeatures {
+  // Original 12 features
   amount: number
   week_of_month: number
   day_of_month: number
@@ -57,6 +58,11 @@ export interface TransactionFeatures {
   trx_frequency: number
   rolling_avg_7d: number
   expense_acceleration: number
+  // 4 new monthly aggregate features (v2)
+  avg_daily_expense: number
+  total_trx_month: number
+  max_single_trx: number
+  std_daily_expense: number
 }
 
 interface APISpendingForecast {

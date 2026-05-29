@@ -1,10 +1,11 @@
 """
 Pydantic schemas for the Spendly ML prediction API.
 
-Both models share the same 12 feature columns derived from transaction data:
+Both models share the same 16 feature columns derived from transaction data:
     amount, week_of_month, day_of_month, month_budget, daily_budget,
     cum_expense_daily, cum_expense_monthly, current_budget, spending_ratio,
-    trx_frequency, rolling_avg_7d, expense_acceleration
+    trx_frequency, rolling_avg_7d, expense_acceleration,
+    avg_daily_expense, total_trx_month, max_single_trx, std_daily_expense
 """
 from typing import Literal
 from pydantic import BaseModel, Field
@@ -15,8 +16,9 @@ from pydantic import BaseModel, Field
 # ─────────────────────────────────────────────────────────────────────────────
 
 class TransactionFeatures(BaseModel):
-    """12 engineered features for a single transaction/day."""
+    """16 engineered features for a single transaction/day."""
 
+    # Original 12 features
     amount: float = Field(..., ge=0, description="Transaction amount in IDR")
     week_of_month: float = Field(..., ge=1, le=5, description="Week number within the month (1–5)")
     day_of_month: float = Field(..., ge=1, le=31, description="Day of the month (1–31)")
@@ -29,6 +31,11 @@ class TransactionFeatures(BaseModel):
     trx_frequency: float = Field(..., ge=0, description="Number of transactions today")
     rolling_avg_7d: float = Field(..., ge=0, description="7-day rolling average of daily expense in IDR")
     expense_acceleration: float = Field(..., description="Change in daily expense vs previous day in IDR")
+    # 4 new monthly aggregate features
+    avg_daily_expense: float = Field(..., ge=0, description="Mean transaction amount this month in IDR")
+    total_trx_month: float = Field(..., ge=0, description="Total number of transactions this month")
+    max_single_trx: float = Field(..., ge=0, description="Largest single transaction this month in IDR")
+    std_daily_expense: float = Field(..., ge=0, description="Std dev of transaction amounts this month in IDR")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -53,13 +60,13 @@ class StatusResponse(BaseModel):
 class SpendingRequest(BaseModel):
     """
     Request body for POST /predict/spending.
-    Requires a sequence of exactly 7 transaction snapshots (oldest → newest).
+    Requires a sequence of exactly 14 transaction snapshots (oldest → newest).
     """
     sequence: list[TransactionFeatures] = Field(
         ...,
-        min_length=7,
-        max_length=7,
-        description="Exactly 7 consecutive transaction snapshots for LSTM input",
+        min_length=14,
+        max_length=14,
+        description="Exactly 14 consecutive transaction snapshots for LSTM input",
     )
 
 
@@ -70,7 +77,7 @@ class SpendingResponse(BaseModel):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Gemini AI Insights
+# AI Insights
 # ─────────────────────────────────────────────────────────────────────────────
 
 class InsightsRequest(BaseModel):
@@ -90,4 +97,4 @@ class InsightsRequest(BaseModel):
 
 
 class InsightsResponse(BaseModel):
-    insight: str   # markdown text from Gemini
+    insight: str
