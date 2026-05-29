@@ -161,7 +161,7 @@ export default function ReportsView({ session }: ReportsViewProps) {
             <div className="flex justify-between items-center pb-3 border-b border-accent/5">
               <span className="text-text-secondary">Rata-rata per hari:</span>
               <span className="font-mono font-semibold text-text-primary">
-                {formatCurrency(Math.round(totalExpenses / new Date(selectedMonth + '-01').toLocaleDateString('en', { day: 'numeric', month: 'numeric', year: 'numeric' }).split('/')[0].length || 30))}
+                {formatCurrency(Math.round(totalExpenses / new Date(parseInt(selectedMonth.split('-')[0]), parseInt(selectedMonth.split('-')[1]), 0).getDate()))}
               </span>
             </div>
             <div className="flex justify-between items-center pt-2">
