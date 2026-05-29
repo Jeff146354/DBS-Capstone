@@ -82,10 +82,6 @@ export default function BalanceView({ session }: BalanceViewProps) {
             <p className="font-mono font-bold text-danger">-{formatCurrency(monthlyExpenses)}</p>
           </div>
         </div>
-        <div className="pt-2 border-t border-accent/5 flex justify-between items-center">
-          <span className="text-text-secondary text-sm">Pendapatan bulanan (profil):</span>
-          <span className="font-mono font-semibold text-accent">{formatCurrency(session.monthlyIncome)}</span>
-        </div>
       </div>
 
       {/* Per-account balances */}

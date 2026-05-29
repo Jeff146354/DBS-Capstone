@@ -43,7 +43,7 @@ export default function LoginScreen({ onLogin }: LoginScreenProps) {
         return
       }
       const user = json.data
-      onLogin({ userId: user.id, userName: user.name, monthlyIncome: user.monthly_income })
+      onLogin({ userId: user.id, userName: user.name })
     } catch (err) {
       setLoginError(`Tidak dapat terhubung ke server. (${err})`)
     } finally {
@@ -80,7 +80,7 @@ export default function LoginScreen({ onLogin }: LoginScreenProps) {
         return
       }
       const user = json.data
-      onLogin({ userId: user.id, userName: user.name, monthlyIncome: user.monthly_income })
+      onLogin({ userId: user.id, userName: user.name })
     } catch (err) {
       setRegError(`Tidak dapat terhubung ke server. (${err})`)
     } finally {

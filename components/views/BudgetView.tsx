@@ -55,8 +55,8 @@ export default function BudgetView({ session }: BudgetViewProps) {
   const totalIncome = transactions.filter(t => t.type === 'income').reduce((s, t) => s + t.amount, 0)
   const balance = totalIncome - totalExpenses
 
-  // Use monthly_income as the overall budget reference
-  const monthlyBudget = session.monthlyIncome || totalIncome || 1
+  // Budget = total income recorded this month
+  const monthlyBudget = totalIncome
 
   return (
     <div className="p-4 space-y-6">
@@ -78,11 +78,19 @@ export default function BudgetView({ session }: BudgetViewProps) {
           <span className="text-text-secondary text-sm">Total Pengeluaran</span>
           <span className="font-mono font-bold text-danger">{formatCurrency(totalExpenses)}</span>
         </div>
-        <ProgressBar spent={totalExpenses} limit={monthlyBudget} />
-        <div className="flex justify-between text-xs text-text-secondary">
-          <span>Anggaran: {formatCurrency(monthlyBudget)}</span>
-          <span>{monthlyBudget > 0 ? Math.round((totalExpenses / monthlyBudget) * 100) : 0}% terpakai</span>
-        </div>
+        {monthlyBudget > 0 ? (
+          <>
+            <ProgressBar spent={totalExpenses} limit={monthlyBudget} />
+            <div className="flex justify-between text-xs text-text-secondary">
+              <span>Pendapatan: {formatCurrency(monthlyBudget)}</span>
+              <span>{Math.round((totalExpenses / monthlyBudget) * 100)}% terpakai</span>
+            </div>
+          </>
+        ) : (
+          <p className="text-xs text-text-secondary">
+            Tambahkan transaksi pendapatan untuk melihat progress pengeluaran.
+          </p>
+        )}
       </div>
 
       {/* Per-category breakdown */}

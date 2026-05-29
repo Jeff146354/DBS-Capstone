@@ -177,7 +177,6 @@ export default function TodayView({ session }: TodayViewProps) {
 
   const today = new Date().toISOString().split('T')[0]
   const currentMonth = today.slice(0, 7)
-  const monthBudget = session.monthlyIncome
 
   const fetchData = useCallback(async () => {
     setLoading(true)
@@ -207,6 +206,9 @@ export default function TodayView({ session }: TodayViewProps) {
     if (loading || transactions.length === 0) return
     if (mlFetchedRef.current) return
     mlFetchedRef.current = true
+
+    // monthBudget derived from summary (total income this month)
+    const monthBudget = summary.total_income
 
     async function fetchML() {
       setMlLoading(true)
@@ -291,9 +293,11 @@ export default function TodayView({ session }: TodayViewProps) {
     }
 
     fetchML()
-  }, [loading, transactions.length, today, monthBudget, session.userName, mlRetryCount])
+  }, [loading, transactions.length, today, session.userName, mlRetryCount])
 
   const todayTransactions = transactions.filter(t => t.date === today)
+  // Budget = total income recorded this month (not a fixed profile value)
+  const monthBudget = summary.total_income
   const monthlyExpenses = summary.total_expenses
   const monthlyStatus = getSpendingStatus(monthlyExpenses, monthBudget)
   const greeting = getGreeting()
@@ -340,13 +344,21 @@ export default function TodayView({ session }: TodayViewProps) {
               <p className="text-text-secondary text-sm mb-1">Pengeluaran Bulan Ini</p>
               <p className="font-mono text-2xl font-bold text-accent">{formatCurrency(monthlyExpenses)}</p>
             </div>
-            <StatusBadge status={monthlyStatus} />
+            {monthBudget > 0 && <StatusBadge status={monthlyStatus} />}
           </div>
-          <ProgressBar spent={monthlyExpenses} limit={monthBudget} />
-          <div className="flex justify-between text-xs text-text-secondary pt-2 border-t border-accent/5">
-            <span>Budget: {formatCurrency(monthBudget)}</span>
-            <span>Sisa: {formatCurrency(Math.max(0, monthBudget - monthlyExpenses))}</span>
-          </div>
+          {monthBudget > 0 ? (
+            <>
+              <ProgressBar spent={monthlyExpenses} limit={monthBudget} />
+              <div className="flex justify-between text-xs text-text-secondary pt-2 border-t border-accent/5">
+                <span>Pendapatan: {formatCurrency(monthBudget)}</span>
+                <span>Sisa: {formatCurrency(Math.max(0, monthBudget - monthlyExpenses))}</span>
+              </div>
+            </>
+          ) : (
+            <p className="text-xs text-text-secondary pt-2 border-t border-accent/5">
+              Tambahkan transaksi pendapatan untuk melihat progress pengeluaran.
+            </p>
+          )}
         </div>
 
         {/* AI Insights Card */}

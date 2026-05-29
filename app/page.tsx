@@ -14,7 +14,6 @@ type ActiveView = 'today' | 'balance' | 'budget' | 'reports' | 'transactions'
 export interface UserSession {
   userId: string
   userName: string
-  monthlyIncome: number
 }
 
 export default function Home() {
