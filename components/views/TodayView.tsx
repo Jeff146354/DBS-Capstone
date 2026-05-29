@@ -48,7 +48,6 @@ function buildFeatures(
   allMonthTx: APITransaction[],
   monthBudget: number,
 ): TransactionFeatures {
-  // daily_budget is only used as an ML feature, not shown in UI
   const dailyBudget = monthBudget > 0 ? Math.round(monthBudget / 30) : 200000
 
   const expenses = allMonthTx.filter(t => t.type === 'expense')
@@ -76,19 +75,6 @@ function buildFeatures(
   })()
   const yesterdayTotal = expenses.filter(t => t.date === yesterday).reduce((s, t) => s + t.amount, 0)
 
-  // Monthly aggregate features (new in v2)
-  const monthlyAmounts = expenses.map(t => t.amount)
-  const avgDailyExpense = monthlyAmounts.length > 0
-    ? monthlyAmounts.reduce((s, a) => s + a, 0) / monthlyAmounts.length : 0
-  const totalTrxMonth = expenses.length
-  const maxSingleTrx = monthlyAmounts.length > 0 ? Math.max(...monthlyAmounts) : 0
-  const stdDailyExpense = (() => {
-    if (monthlyAmounts.length < 2) return 0
-    const mean = avgDailyExpense
-    const variance = monthlyAmounts.reduce((s, a) => s + (a - mean) ** 2, 0) / monthlyAmounts.length
-    return Math.sqrt(variance)
-  })()
-
   return {
     amount: dayExpenses.length > 0 ? cumExpenseDaily / dayExpenses.length : 0,
     week_of_month: Math.ceil(new Date(targetDate).getDate() / 7),
@@ -102,10 +88,6 @@ function buildFeatures(
     trx_frequency: trxFrequency,
     rolling_avg_7d: rollingAvg7d,
     expense_acceleration: cumExpenseDaily - yesterdayTotal,
-    avg_daily_expense: avgDailyExpense,
-    total_trx_month: totalTrxMonth,
-    max_single_trx: maxSingleTrx,
-    std_daily_expense: stdDailyExpense,
   }
 }
 
@@ -114,10 +96,9 @@ function buildSequence(
   allMonthTx: APITransaction[],
   monthBudget: number,
 ): TransactionFeatures[] {
-  // Window = 14 days (changed from 7 in v2)
-  return Array.from({ length: 14 }, (_, i) => {
+  return Array.from({ length: 7 }, (_, i) => {
     const d = new Date(targetDate)
-    d.setDate(d.getDate() - (13 - i))
+    d.setDate(d.getDate() - (6 - i))
     return buildFeatures(d.toISOString().split('T')[0], allMonthTx, monthBudget)
   })
 }
